@@ -30,10 +30,10 @@ def registrar_usuario(email: str, password: str) -> tuple[bool, str]:
         if existing.data:
             return False, "Ya existe una cuenta con ese correo."
 
-        client.table("usuarios").insert({
-            "email": email,
-            "password": hash_password(password)
-        }).execute()
+        client.table("usuarios").insert(
+            {"email": email, "password": hash_password(password)},
+            returning="minimal"
+        ).execute()
         return True, "Cuenta creada exitosamente. Podés iniciar sesión."
     except Exception as e:
         return False, f"Error al registrar: {e}"
