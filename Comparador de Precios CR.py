@@ -1,17 +1,147 @@
 import streamlit as st
 import pandas as pd
+import hashlib
 from supabase import create_client
 
 st.set_page_config(page_title="Comparador de Precios CR", layout="wide", page_icon="🛒")
-st.title("🛒 Comparador Histórico de Precios CR")
-st.markdown("Analizá la fluctuación de precios de la canasta básica en supermercados locales.")
 
 # --- CONEXIÓN A SUPABASE ---
 try:
     client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 except Exception as e:
-    st.error(f"❌ Error al conectar con Supabase. Verificá los Secrets de la app: {e}")
+    st.error(f"❌ Error al conectar con Supabase: {e}")
     st.stop()
+
+
+# ─────────────────────────────────────────────
+# UTILIDADES DE AUTENTICACIÓN
+# ─────────────────────────────────────────────
+
+def hash_password(password: str) -> str:
+    """Hashea la contraseña con SHA-256."""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+def registrar_usuario(email: str, password: str) -> tuple[bool, str]:
+    """Inserta un nuevo usuario. Retorna (éxito, mensaje)."""
+    try:
+        # Verificar si el email ya existe
+        existing = client.table("usuarios").select("id").eq("email", email).execute()
+        if existing.data:
+            return False, "Ya existe una cuenta con ese correo."
+
+        client.table("usuarios").insert({
+            "email": email,
+            "password": hash_password(password)
+        }).execute()
+        return True, "Cuenta creada exitosamente. Podés iniciar sesión."
+    except Exception as e:
+        return False, f"Error al registrar: {e}"
+
+
+def iniciar_sesion(email: str, password: str) -> tuple[bool, str]:
+    """Verifica credenciales. Retorna (éxito, mensaje)."""
+    try:
+        response = client.table("usuarios").select("id, email, password").eq("email", email).execute()
+        if not response.data:
+            return False, "No existe una cuenta con ese correo."
+
+        usuario = response.data[0]
+        if usuario["password"] != hash_password(password):
+            return False, "Contraseña incorrecta."
+
+        # Guardar sesión en session_state
+        st.session_state["autenticado"] = True
+        st.session_state["usuario_email"] = usuario["email"]
+        st.session_state["usuario_id"] = usuario["id"]
+        return True, "Sesión iniciada correctamente."
+    except Exception as e:
+        return False, f"Error al iniciar sesión: {e}"
+
+
+def cerrar_sesion():
+    st.session_state["autenticado"] = False
+    st.session_state["usuario_email"] = None
+    st.session_state["usuario_id"] = None
+
+
+# ─────────────────────────────────────────────
+# INICIALIZAR SESSION STATE
+# ─────────────────────────────────────────────
+
+if "autenticado" not in st.session_state:
+    st.session_state["autenticado"] = False
+if "usuario_email" not in st.session_state:
+    st.session_state["usuario_email"] = None
+
+
+# ─────────────────────────────────────────────
+# PANTALLA DE LOGIN / REGISTRO
+# ─────────────────────────────────────────────
+
+if not st.session_state["autenticado"]:
+    st.title("🛒 Comparador Histórico de Precios CR")
+    st.markdown("Ingresá a tu cuenta para acceder al comparador.")
+
+    tab_login, tab_registro = st.tabs(["Iniciar Sesión", "Crear Cuenta"])
+
+    with tab_login:
+        with st.form("form_login"):
+            email = st.text_input("Correo electrónico", placeholder="tu@correo.com")
+            password = st.text_input("Contraseña", type="password")
+            submit = st.form_submit_button("Ingresar", use_container_width=True)
+
+        if submit:
+            if not email or not password:
+                st.warning("Completá todos los campos.")
+            else:
+                exito, mensaje = iniciar_sesion(email.strip().lower(), password)
+                if exito:
+                    st.success(mensaje)
+                    st.rerun()
+                else:
+                    st.error(mensaje)
+
+    with tab_registro:
+        with st.form("form_registro"):
+            email_reg = st.text_input("Correo electrónico", placeholder="tu@correo.com", key="email_reg")
+            pass_reg = st.text_input("Contraseña", type="password", key="pass_reg")
+            pass_conf = st.text_input("Confirmá la contraseña", type="password", key="pass_conf")
+            submit_reg = st.form_submit_button("Crear cuenta", use_container_width=True)
+
+        if submit_reg:
+            if not email_reg or not pass_reg or not pass_conf:
+                st.warning("Completá todos los campos.")
+            elif pass_reg != pass_conf:
+                st.error("Las contraseñas no coinciden.")
+            elif len(pass_reg) < 6:
+                st.warning("La contraseña debe tener al menos 6 caracteres.")
+            else:
+                exito, mensaje = registrar_usuario(email_reg.strip().lower(), pass_reg)
+                if exito:
+                    st.success(mensaje)
+                else:
+                    st.error(mensaje)
+
+    st.stop()  # No mostrar nada más si no está autenticado
+
+
+# ─────────────────────────────────────────────
+# APP PRINCIPAL (solo si está autenticado)
+# ─────────────────────────────────────────────
+
+st.title("🛒 Comparador Histórico de Precios CR")
+st.markdown("Analizá la fluctuación de precios de la canasta básica en supermercados locales.")
+
+# Bienvenida + botón de cerrar sesión en la barra lateral
+with st.sidebar:
+    st.markdown(f"👤 **{st.session_state['usuario_email']}**")
+    if st.button("Cerrar sesión", use_container_width=True):
+        cerrar_sesion()
+        st.rerun()
+    st.divider()
+    st.header("Filtros de Búsqueda")
+
 
 # --- 1. CATEGORÍAS ---
 @st.cache_data(ttl=600)
@@ -19,9 +149,7 @@ def obtener_categorias():
     try:
         response = client.table("categorias").select("id, nombre").order("nombre").execute()
         data = response.data
-        if not data:
-            return pd.DataFrame(columns=["id", "nombre"])
-        return pd.DataFrame(data)
+        return pd.DataFrame(data) if data else pd.DataFrame(columns=["id", "nombre"])
     except Exception as e:
         st.error(f"❌ Error cargando categorías: {e}")
         return pd.DataFrame(columns=["id", "nombre"])
@@ -29,16 +157,16 @@ def obtener_categorias():
 df_cat = obtener_categorias()
 
 if df_cat.empty:
-    st.error("⚠️ No se pudieron cargar las categorías. Verificá la conexión con Supabase.")
+    st.error("⚠️ No se pudieron cargar las categorías.")
     st.info("Revisá: 1) Los Secrets en Streamlit Cloud  2) RLS en Supabase  3) Que el proyecto no esté pausado.")
     st.stop()
 
-# --- 2. SELECTOR DE CATEGORÍAS (Barra Lateral) ---
-st.sidebar.header("Filtros de Búsqueda")
+# --- 2. SELECTOR DE CATEGORÍAS ---
 categoria_sel = st.sidebar.selectbox("1. Seleccioná una Categoría:", options=df_cat["nombre"])
 id_cat_sel = df_cat[df_cat["nombre"] == categoria_sel]["id"].values[0]
 
-# --- 3. PRODUCTOS (Dependiente de la categoría) ---
+
+# --- 3. PRODUCTOS ---
 @st.cache_data(ttl=300)
 def obtener_productos(id_categoria):
     try:
@@ -50,9 +178,7 @@ def obtener_productos(id_categoria):
             .execute()
         )
         data = response.data
-        if not data:
-            return pd.DataFrame(columns=["id", "nombre"])
-        return pd.DataFrame(data)
+        return pd.DataFrame(data) if data else pd.DataFrame(columns=["id", "nombre"])
     except Exception as e:
         st.error(f"❌ Error cargando productos: {e}")
         return pd.DataFrame(columns=["id", "nombre"])
@@ -75,9 +201,7 @@ if not df_prod.empty:
                 .execute()
             )
             data = response.data
-            if not data:
-                return pd.DataFrame(columns=["supermercado", "precio", "fecha"])
-            return pd.DataFrame(data)
+            return pd.DataFrame(data) if data else pd.DataFrame(columns=["supermercado", "precio", "fecha"])
         except Exception as e:
             st.error(f"❌ Error cargando historial: {e}")
             return pd.DataFrame(columns=["supermercado", "precio", "fecha"])
