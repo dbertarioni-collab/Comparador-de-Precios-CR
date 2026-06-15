@@ -1,4 +1,5 @@
-import streamlit as st
+# app.py
+    import streamlit as st
     import pandas as pd
 
     st.set_page_config(page_title="Comparador de Precios CR", layout="wide", page_icon="🛒")
