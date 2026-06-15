@@ -4,3 +4,4 @@ psycopg2-binary
 requests
 beautifulsoup4
 sqlalchemy
+psycopg2-binary
