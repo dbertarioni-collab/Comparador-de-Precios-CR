@@ -26,7 +26,7 @@ def registrar_usuario(email: str, password: str) -> tuple[bool, str]:
     """Inserta un nuevo usuario. Retorna (éxito, mensaje)."""
     try:
         # Verificar si el email ya existe
-        existing = client.table("usuarios").select("id").eq("email", email).execute()
+        existing = client.table("usuarios").select("email").eq("email", email).execute()
         if existing.data:
             return False, "Ya existe una cuenta con ese correo."
 
@@ -42,7 +42,7 @@ def registrar_usuario(email: str, password: str) -> tuple[bool, str]:
 def iniciar_sesion(email: str, password: str) -> tuple[bool, str]:
     """Verifica credenciales. Retorna (éxito, mensaje)."""
     try:
-        response = client.table("usuarios").select("id, email, password").eq("email", email).execute()
+        response = client.table("usuarios").select("email, password").eq("email", email).execute()
         if not response.data:
             return False, "No existe una cuenta con ese correo."
 
@@ -53,7 +53,6 @@ def iniciar_sesion(email: str, password: str) -> tuple[bool, str]:
         # Guardar sesión en session_state
         st.session_state["autenticado"] = True
         st.session_state["usuario_email"] = usuario["email"]
-        st.session_state["usuario_id"] = usuario["id"]
         return True, "Sesión iniciada correctamente."
     except Exception as e:
         return False, f"Error al iniciar sesión: {e}"
@@ -62,7 +61,6 @@ def iniciar_sesion(email: str, password: str) -> tuple[bool, str]:
 def cerrar_sesion():
     st.session_state["autenticado"] = False
     st.session_state["usuario_email"] = None
-    st.session_state["usuario_id"] = None
 
 
 # ─────────────────────────────────────────────
