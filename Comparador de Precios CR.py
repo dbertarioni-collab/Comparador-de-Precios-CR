@@ -30,9 +30,7 @@ def registrar_usuario(email: str, password: str, nombre: str, apellido: str) -> 
 
         client.table("usuarios").insert({
             "email":    email,
-            "password": hash_password(password),
-            "nombre":   nombre,
-            "apellido": apellido
+            "password": hash_password(password)
         }).execute()
         return True, "Cuenta creada exitosamente. Podés iniciar sesión."
     except Exception as e:
@@ -55,15 +53,13 @@ def iniciar_sesion(email: str, password: str) -> tuple[bool, str]:
         st.session_state["autenticado"]      = True
         st.session_state["usuario_email"]    = usuario["email"]
         st.session_state["usuario_id"]       = usuario["id"]
-        st.session_state["usuario_nombre"]   = usuario.get("nombre", "")
-        st.session_state["usuario_apellido"] = usuario.get("apellido", "")
         return True, "Sesión iniciada correctamente."
     except Exception as e:
         return False, f"Error al iniciar sesión: {e}"
 
 
 def cerrar_sesion():
-    for key in ["autenticado", "usuario_email", "usuario_id", "usuario_nombre", "usuario_apellido"]:
+    for key in ["autenticado", "usuario_email", "usuario_id":
         st.session_state[key] = None
     st.session_state["autenticado"] = False
 
@@ -75,9 +71,7 @@ def cerrar_sesion():
 defaults = {
     "autenticado":      False,
     "usuario_email":    None,
-    "usuario_id":       None,
-    "usuario_nombre":   None,
-    "usuario_apellido": None,
+    "usuario_id":       None
 }
 for k, v in defaults.items():
     if k not in st.session_state:
