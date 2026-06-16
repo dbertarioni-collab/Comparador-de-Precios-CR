@@ -18,31 +18,32 @@ except Exception as e:
 # ─────────────────────────────────────────────
 
 def hash_password(password: str) -> str:
-    """Hashea la contraseña con SHA-256."""
     return hashlib.sha256(password.encode()).hexdigest()
 
 
-def registrar_usuario(email: str, password: str) -> tuple[bool, str]:
-    """Inserta un nuevo usuario. Retorna (éxito, mensaje)."""
+def registrar_usuario(email: str, password: str, nombre: str, apellido: str) -> tuple[bool, str]:
     try:
-        # Verificar si el email ya existe
-        existing = client.table("usuarios").select("email").eq("email", email).execute()
+        existing = client.table("usuarios").select("id").eq("email", email).execute()
         if existing.data:
             return False, "Ya existe una cuenta con ese correo."
 
-        client.table("usuarios").insert(
-            {"email": email, "password": hash_password(password)},
-            returning="minimal"
-        ).execute()
+        client.table("usuarios").insert({
+            "email":    email,
+            "password": hash_password(password),
+            "nombre":   nombre,
+            "apellido": apellido
+        }).execute()
         return True, "Cuenta creada exitosamente. Podés iniciar sesión."
     except Exception as e:
         return False, f"Error al registrar: {e}"
 
 
 def iniciar_sesion(email: str, password: str) -> tuple[bool, str]:
-    """Verifica credenciales. Retorna (éxito, mensaje)."""
     try:
-        response = client.table("usuarios").select("email, password").eq("email", email).execute()
+        response = client.table("usuarios").select(
+            "id, email, password, nombre, apellido"
+        ).eq("email", email).execute()
+
         if not response.data:
             return False, "No existe una cuenta con ese correo."
 
@@ -50,27 +51,36 @@ def iniciar_sesion(email: str, password: str) -> tuple[bool, str]:
         if usuario["password"] != hash_password(password):
             return False, "Contraseña incorrecta."
 
-        # Guardar sesión en session_state
-        st.session_state["autenticado"] = True
-        st.session_state["usuario_email"] = usuario["email"]
+        st.session_state["autenticado"]      = True
+        st.session_state["usuario_email"]    = usuario["email"]
+        st.session_state["usuario_id"]       = usuario["id"]
+        st.session_state["usuario_nombre"]   = usuario.get("nombre", "")
+        st.session_state["usuario_apellido"] = usuario.get("apellido", "")
         return True, "Sesión iniciada correctamente."
     except Exception as e:
         return False, f"Error al iniciar sesión: {e}"
 
 
 def cerrar_sesion():
+    for key in ["autenticado", "usuario_email", "usuario_id", "usuario_nombre", "usuario_apellido"]:
+        st.session_state[key] = None
     st.session_state["autenticado"] = False
-    st.session_state["usuario_email"] = None
 
 
 # ─────────────────────────────────────────────
 # INICIALIZAR SESSION STATE
 # ─────────────────────────────────────────────
 
-if "autenticado" not in st.session_state:
-    st.session_state["autenticado"] = False
-if "usuario_email" not in st.session_state:
-    st.session_state["usuario_email"] = None
+defaults = {
+    "autenticado":      False,
+    "usuario_email":    None,
+    "usuario_id":       None,
+    "usuario_nombre":   None,
+    "usuario_apellido": None,
+}
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 
 # ─────────────────────────────────────────────
@@ -85,9 +95,9 @@ if not st.session_state["autenticado"]:
 
     with tab_login:
         with st.form("form_login"):
-            email = st.text_input("Correo electrónico", placeholder="tu@correo.com")
+            email    = st.text_input("Correo electrónico", placeholder="tu@correo.com")
             password = st.text_input("Contraseña", type="password")
-            submit = st.form_submit_button("Ingresar", use_container_width=True)
+            submit   = st.form_submit_button("Ingresar", use_container_width=True)
 
         if submit:
             if not email or not password:
@@ -102,26 +112,35 @@ if not st.session_state["autenticado"]:
 
     with tab_registro:
         with st.form("form_registro"):
+            col1, col2 = st.columns(2)
+            with col1:
+                nombre_reg = st.text_input("Nombre", placeholder="Juan", key="nombre_reg")
+            with col2:
+                apellido_reg = st.text_input("Apellido", placeholder="Pérez", key="apellido_reg")
+
             email_reg = st.text_input("Correo electrónico", placeholder="tu@correo.com", key="email_reg")
-            pass_reg = st.text_input("Contraseña", type="password", key="pass_reg")
+            pass_reg  = st.text_input("Contraseña", type="password", key="pass_reg")
             pass_conf = st.text_input("Confirmá la contraseña", type="password", key="pass_conf")
             submit_reg = st.form_submit_button("Crear cuenta", use_container_width=True)
 
         if submit_reg:
-            if not email_reg or not pass_reg or not pass_conf:
+            if not nombre_reg or not apellido_reg or not email_reg or not pass_reg or not pass_conf:
                 st.warning("Completá todos los campos.")
             elif pass_reg != pass_conf:
                 st.error("Las contraseñas no coinciden.")
             elif len(pass_reg) < 6:
                 st.warning("La contraseña debe tener al menos 6 caracteres.")
             else:
-                exito, mensaje = registrar_usuario(email_reg.strip().lower(), pass_reg)
+                exito, mensaje = registrar_usuario(
+                    email_reg.strip().lower(), pass_reg,
+                    nombre_reg.strip(), apellido_reg.strip()
+                )
                 if exito:
                     st.success(mensaje)
                 else:
                     st.error(mensaje)
 
-    st.stop()  # No mostrar nada más si no está autenticado
+    st.stop()
 
 
 # ─────────────────────────────────────────────
@@ -131,9 +150,12 @@ if not st.session_state["autenticado"]:
 st.title("🛒 Comparador Histórico de Precios CR")
 st.markdown("Analizá la fluctuación de precios de la canasta básica en supermercados locales.")
 
-# Bienvenida + botón de cerrar sesión en la barra lateral
 with st.sidebar:
-    st.markdown(f"👤 **{st.session_state['usuario_email']}**")
+    nombre_completo = (
+        f"{st.session_state['usuario_nombre']} {st.session_state['usuario_apellido']}"
+    ).strip()
+    st.markdown(f"👤 **{nombre_completo or st.session_state['usuario_email']}**")
+    st.caption(st.session_state["usuario_email"])
     if st.button("Cerrar sesión", use_container_width=True):
         cerrar_sesion()
         st.rerun()
@@ -160,8 +182,8 @@ if df_cat.empty:
     st.stop()
 
 # --- 2. SELECTOR DE CATEGORÍAS ---
-categoria_sel = st.sidebar.selectbox("1. Seleccioná una Categoría:", options=df_cat["nombre"])
-id_cat_sel = df_cat[df_cat["nombre"] == categoria_sel]["id"].values[0]
+categoria_sel  = st.sidebar.selectbox("1. Seleccioná una Categoría:", options=df_cat["nombre"])
+id_cat_sel     = df_cat[df_cat["nombre"] == categoria_sel]["id"].values[0]
 
 
 # --- 3. PRODUCTOS ---
@@ -185,7 +207,7 @@ df_prod = obtener_productos(id_cat_sel)
 
 if not df_prod.empty:
     producto_sel = st.sidebar.selectbox("2. Seleccioná un Producto:", options=df_prod["nombre"])
-    id_prod_sel = df_prod[df_prod["nombre"] == producto_sel]["id"].values[0]
+    id_prod_sel  = df_prod[df_prod["nombre"] == producto_sel]["id"].values[0]
 
     # --- 4. HISTORIAL DE PRECIOS ---
     @st.cache_data(ttl=300)
