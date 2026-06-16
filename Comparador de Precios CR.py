@@ -7,7 +7,8 @@ st.set_page_config(page_title="Comparador de Precios CR", layout="wide", page_ic
 
 # --- CONEXIÓN A SUPABASE ---
 try:
-    client = create_client(st.secrets["supabase_url"], st.secrets["supabase_key"])
+    # Cambia las variables a mayúsculas dentro de los corchetes
+    client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 except Exception as e:
     st.error(f"❌ Error al conectar con Supabase: {e}")
     st.stop()
