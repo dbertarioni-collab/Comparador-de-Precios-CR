@@ -59,9 +59,9 @@ def iniciar_sesion(email: str, password: str) -> tuple[bool, str]:
 
 
 def cerrar_sesion():
-    for key in ["autenticado", "usuario_email", "usuario_id"]
-        st.session_state[key] = None
     st.session_state["autenticado"] = False
+    st.session_state["usuario_email"] = None
+    st.session_state["usuario_id"] = None
 
 
 # ─────────────────────────────────────────────
