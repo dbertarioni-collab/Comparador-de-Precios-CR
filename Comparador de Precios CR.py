@@ -7,7 +7,6 @@ st.set_page_config(page_title="Comparador de Precios CR", layout="wide", page_ic
 
 # --- CONEXIÓN A SUPABASE ---
 try:
-    # Cambia las variables a mayúsculas dentro de los corchetes
     client = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 except Exception as e:
     st.error(f"❌ Error al conectar con Supabase: {e}")
@@ -30,7 +29,9 @@ def registrar_usuario(email: str, password: str, nombre: str, apellido: str) -> 
 
         client.table("usuarios").insert({
             "email":    email,
-            "password": hash_password(password)
+            "password": hash_password(password),
+            "nombre":   nombre,
+            "apellido": apellido,
         }).execute()
         return True, "Cuenta creada exitosamente. Podés iniciar sesión."
     except Exception as e:
@@ -53,15 +54,19 @@ def iniciar_sesion(email: str, password: str) -> tuple[bool, str]:
         st.session_state["autenticado"]      = True
         st.session_state["usuario_email"]    = usuario["email"]
         st.session_state["usuario_id"]       = usuario["id"]
+        st.session_state["usuario_nombre"]   = usuario.get("nombre", "")
+        st.session_state["usuario_apellido"] = usuario.get("apellido", "")
         return True, "Sesión iniciada correctamente."
     except Exception as e:
         return False, f"Error al iniciar sesión: {e}"
 
 
 def cerrar_sesion():
-    st.session_state["autenticado"] = False
-    st.session_state["usuario_email"] = None
-    st.session_state["usuario_id"] = None
+    st.session_state["autenticado"]      = False
+    st.session_state["usuario_email"]    = None
+    st.session_state["usuario_id"]       = None
+    st.session_state["usuario_nombre"]   = None
+    st.session_state["usuario_apellido"] = None
 
 
 # ─────────────────────────────────────────────
@@ -71,7 +76,9 @@ def cerrar_sesion():
 defaults = {
     "autenticado":      False,
     "usuario_email":    None,
-    "usuario_id":       None
+    "usuario_id":       None,
+    "usuario_nombre":   None,
+    "usuario_apellido": None,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -147,7 +154,7 @@ st.markdown("Analizá la fluctuación de precios de la canasta básica en superm
 
 with st.sidebar:
     nombre_completo = (
-        f"{st.session_state['usuario_nombre']} {st.session_state['usuario_apellido']}"
+        f"{st.session_state['usuario_nombre'] or ''} {st.session_state['usuario_apellido'] or ''}"
     ).strip()
     st.markdown(f"👤 **{nombre_completo or st.session_state['usuario_email']}**")
     st.caption(st.session_state["usuario_email"])
@@ -177,8 +184,8 @@ if df_cat.empty:
     st.stop()
 
 # --- 2. SELECTOR DE CATEGORÍAS ---
-categoria_sel  = st.sidebar.selectbox("1. Seleccioná una Categoría:", options=df_cat["nombre"])
-id_cat_sel     = df_cat[df_cat["nombre"] == categoria_sel]["id"].values[0]
+categoria_sel = st.sidebar.selectbox("1. Seleccioná una Categoría:", options=df_cat["nombre"])
+id_cat_sel    = df_cat[df_cat["nombre"] == categoria_sel]["id"].values[0]
 
 
 # --- 3. PRODUCTOS ---
