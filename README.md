@@ -1,15 +1,41 @@
-# Comparador de Precios Supermercados - Costa Rica
+# 🛒 Precios CR — Streamlit App
 
-Prototipo de aplicación analítica utilizando **Streamlit** y **PostgreSQL** para rastrear, almacenar y comparar el historial diario de precios de productos comerciales en Costa Rica.
+Aplicación para extraer, almacenar y consultar precios de supermercados de Costa Rica usando IA.
 
-## 🚀 Arquitectura
-- **Backend (Scrapers):** Ubicados en `scripts/`, diseñados para automatizarse diariamente.
-- **Base de Datos:** PostgreSQL con estructura relacional de 3 tablas (`categorias`, `productos`, `historial_precios`).
-- **Frontend:** Interfaz web interactiva construida 100% en Python con Streamlit.
+## Instalación
 
-## 🛠️ Instalación y Uso Local
+```bash
+pip install -r requirements.txt
+```
 
-1. **Clonar el repositorio:**
-   ```bash
-   git clone [https://github.com/tu-usuario/comparador-precios-cr.git](https://github.com/tu-usuario/comparador-precios-cr.git)
-   cd comparador-precios-cr
+## Uso
+
+```bash
+streamlit run app.py
+```
+
+Abrí `http://localhost:8501` y pegá tu API Key de Anthropic en el panel izquierdo.
+
+## Estructura
+
+```
+precios_cr/
+├── app.py              ← App principal
+├── requirements.txt    ← Dependencias
+└── precios_cr.db       ← SQLite (se crea automáticamente)
+```
+
+## Pestañas
+
+| Pestaña | Función |
+|---|---|
+| 💬 Chat | Chat con streaming, enriquecido con datos de la DB |
+| ⬇️ Extraer datos | Extrae productos por supermercado y categoría, guarda en SQLite |
+| 🗄️ Base de datos | Explora, filtra, analiza y exporta los datos |
+
+## Supermercados
+- Walmart CR · Automercado · PriceSmart · Maxi Palí · Fresh Market
+
+## Categorías
+Lácteos · Granos y cereales · Carnes · Frutas y verduras · Bebidas ·
+Limpieza · Snacks · Panadería · Congelados · Higiene personal · Aceites y condimentos
