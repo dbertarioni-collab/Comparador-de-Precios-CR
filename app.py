@@ -40,7 +40,7 @@ def registrar_usuario(email: str, password: str, nombre: str, apellido: str) -> 
 def iniciar_sesion(email: str, password: str) -> tuple[bool, str]:
     try:
         response = client.table("usuarios").select(
-            "id, email, password, nombre, apellido"
+            "id, email, password"
         ).eq("email", email).execute()
 
         if not response.data:
