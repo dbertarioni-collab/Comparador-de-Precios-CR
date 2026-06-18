@@ -141,27 +141,74 @@ CATEGORIAS = [
 # URLs de categorías conocidas para extracción directa
 URLS_CATEGORIAS = {
     "Automercado": {
-        "Lácteos":           "https://www.automercado.co.cr/lacteos",
-        "Carnes":            "https://www.automercado.co.cr/carnes",
-        "Frutas y verduras": "https://www.automercado.co.cr/frutas-y-verduras",
-        "Bebidas":           "https://www.automercado.co.cr/bebidas",
-        "Panadería":         "https://www.automercado.co.cr/panaderia",
-    },
-    "Fresh Market": {
-        "Lácteos":           "https://www.freshmarket.co.cr/lacteos",
-        "Bebidas":           "https://www.freshmarket.co.cr/bebidas",
+        "Lácteos":               "https://www.automercado.co.cr/lacteos",
+        "Carnes":                "https://www.automercado.co.cr/carnes",
+        "Frutas y verduras":     "https://www.automercado.co.cr/frutas-y-verduras",
+        "Bebidas":               "https://www.automercado.co.cr/bebidas",
+        "Panadería":             "https://www.automercado.co.cr/panaderia",
+        "Granos y cereales":     "https://www.automercado.co.cr/granos-y-legumbres",
+        "Limpieza":              "https://www.automercado.co.cr/limpieza-del-hogar",
+        "Snacks":                "https://www.automercado.co.cr/snacks-y-dulces",
+        "Congelados":            "https://www.automercado.co.cr/congelados",
+        "Higiene personal":      "https://www.automercado.co.cr/cuidado-personal",
+        "Aceites y condimentos": "https://www.automercado.co.cr/aceites-y-condimentos",
     },
     "Maxi Palí": {
-        "Lácteos":           "https://www.maxipali.co.cr/lacteos",
-        "Granos y cereales": "https://www.maxipali.co.cr/granos-y-cereales",
-        "Bebidas":           "https://www.maxipali.co.cr/bebidas",
+        "Lácteos":               "https://www.maxipali.co.cr/lacteos",
+        "Carnes":                "https://www.maxipali.co.cr/carnes",
+        "Frutas y verduras":     "https://www.maxipali.co.cr/frutas-y-vegetales",
+        "Bebidas":               "https://www.maxipali.co.cr/bebidas",
+        "Granos y cereales":     "https://www.maxipali.co.cr/granos-y-cereales",
+        "Limpieza":              "https://www.maxipali.co.cr/limpieza-del-hogar",
+        "Snacks":                "https://www.maxipali.co.cr/snacks",
+        "Congelados":            "https://www.maxipali.co.cr/congelados",
+        "Higiene personal":      "https://www.maxipali.co.cr/cuidado-personal",
+        "Aceites y condimentos": "https://www.maxipali.co.cr/aceites-y-condimentos",
+        "Panadería":             "https://www.maxipali.co.cr/panaderia",
+    },
+    "Fresh Market": {
+        "Lácteos":               "https://www.freshmarket.co.cr/lacteos",
+        "Carnes":                "https://www.freshmarket.co.cr/carnes",
+        "Frutas y verduras":     "https://www.freshmarket.co.cr/frutas-y-verduras",
+        "Bebidas":               "https://www.freshmarket.co.cr/bebidas",
+        "Panadería":             "https://www.freshmarket.co.cr/panaderia",
+        "Limpieza":              "https://www.freshmarket.co.cr/limpieza",
+        "Snacks":                "https://www.freshmarket.co.cr/snacks",
+        "Congelados":            "https://www.freshmarket.co.cr/congelados",
+        "Higiene personal":      "https://www.freshmarket.co.cr/cuidado-personal",
+        "Aceites y condimentos": "https://www.freshmarket.co.cr/aceites-y-condimentos",
+        "Granos y cereales":     "https://www.freshmarket.co.cr/granos-y-cereales",
     },
     "Walmart CR": {
-        "Lácteos":           "https://www.walmart.co.cr/supermercado/lacteos",
-        "Bebidas":           "https://www.walmart.co.cr/supermercado/bebidas",
-        "Limpieza":          "https://www.walmart.co.cr/supermercado/limpieza",
+        "Lácteos":               "https://www.walmart.co.cr/supermercado/lacteos",
+        "Carnes":                "https://www.walmart.co.cr/supermercado/carnes",
+        "Frutas y verduras":     "https://www.walmart.co.cr/supermercado/frutas-y-verduras",
+        "Bebidas":               "https://www.walmart.co.cr/supermercado/bebidas",
+        "Granos y cereales":     "https://www.walmart.co.cr/supermercado/granos-y-cereales",
+        "Limpieza":              "https://www.walmart.co.cr/supermercado/limpieza",
+        "Snacks":                "https://www.walmart.co.cr/supermercado/snacks",
+        "Congelados":            "https://www.walmart.co.cr/supermercado/congelados",
+        "Higiene personal":      "https://www.walmart.co.cr/supermercado/cuidado-personal",
+        "Aceites y condimentos": "https://www.walmart.co.cr/supermercado/aceites-y-condimentos",
+        "Panadería":             "https://www.walmart.co.cr/supermercado/panaderia",
+    },
+    "PriceSmart": {
+        "Lácteos":               "https://www.pricesmart.com/es/cr/categoria/lacteos",
+        "Carnes":                "https://www.pricesmart.com/es/cr/categoria/carnes",
+        "Frutas y verduras":     "https://www.pricesmart.com/es/cr/categoria/frutas-y-verduras",
+        "Bebidas":               "https://www.pricesmart.com/es/cr/categoria/bebidas",
+        "Granos y cereales":     "https://www.pricesmart.com/es/cr/categoria/granos-y-cereales",
+        "Limpieza":              "https://www.pricesmart.com/es/cr/categoria/limpieza",
+        "Snacks":                "https://www.pricesmart.com/es/cr/categoria/snacks",
+        "Congelados":            "https://www.pricesmart.com/es/cr/categoria/congelados",
+        "Higiene personal":      "https://www.pricesmart.com/es/cr/categoria/cuidado-personal",
+        "Aceites y condimentos": "https://www.pricesmart.com/es/cr/categoria/aceites-y-condimentos",
+        "Panadería":             "https://www.pricesmart.com/es/cr/categoria/panaderia",
     },
 }
+
+# Supers con protección anti-bot conocida → usar IA como respaldo
+SUPERS_BLOQUEADOS = {"Walmart CR", "PriceSmart"}
 
 HEADERS = {
     "User-Agent": (
@@ -305,172 +352,214 @@ tab_url, tab_chat, tab_ia, tab_db = st.tabs([
 # TAB 1 · EXTRAER POR URL
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_url:
-    st.subheader("🔗 Extraer productos desde una URL")
-    st.caption("Pegá el link de cualquier página de productos y la app extrae los precios automáticamente.")
+    st.subheader("🔗 Extraer productos desde URL")
+    st.caption("La app entra sola a las páginas de los supermercados y extrae todos los productos automáticamente.")
 
-    # URLs sugeridas por supermercado
-    with st.expander("📋 URLs sugeridas por supermercado (hacé clic para copiar)", expanded=True):
-        for super_, cats in URLS_CATEGORIAS.items():
-            st.markdown(f"**{super_}**")
-            for cat, url in cats.items():
-                st.code(url, language=None)
+    # ── Resumen de cobertura ──────────────────────────────────────────────────
+    all_urls = [(s, c, u) for s, cats in URLS_CATEGORIAS.items() for c, u in cats.items()]
+    total_urls = len(all_urls)
+    n_supers   = len(URLS_CATEGORIAS)
+    n_cats_all = len(set(c for _, c, _ in all_urls))
 
-    st.divider()
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Supermercados", n_supers)
+    m2.metric("Categorías", n_cats_all)
+    m3.metric("URLs totales", total_urls)
+    m4.metric("Productos estimados", f"~{total_urls * 8}")
 
-    # Extracción de una URL
-    col_url, col_cat = st.columns([3, 1])
-    with col_url:
-        url_input = st.text_input(
-            "URL de la página de productos",
-            placeholder="https://www.automercado.co.cr/lacteos",
-            key="url_input",
-        )
-    with col_cat:
-        cat_override = st.selectbox("Categoría (opcional)", ["Detectar automáticamente"] + CATEGORIAS)
-
-    if url_input:
-        super_detectado = detectar_supermercado(url_input)
-        st.caption(f"Supermercado detectado: **{super_detectado}**")
-
-    extract_url_btn = st.button(
-        "🚀 Extraer productos",
-        type="primary",
-        disabled=not url_input or not api_key,
-        key="extract_url_btn",
+    st.info(
+        "🟢 **Automercado, Fresh Market, Maxi Palí** — extracción directa desde la web.  \n"
+        "🟡 **Walmart CR, PriceSmart** — si bloquean el acceso, se usa IA como respaldo automático."
     )
 
-    if extract_url_btn:
-        if not api_key:
-            st.error("⚠️ Ingresá tu API Key.")
-            st.stop()
+    # ── BOTÓN PRINCIPAL: EXTRAER TODO ────────────────────────────────────────
+    st.markdown("### 🚀 Extraer todo de una vez")
 
-        super_ = detectar_supermercado(url_input)
-        cat    = cat_override if cat_override != "Detectar automáticamente" else "General"
-
-        with st.status(f"Extrayendo productos de {super_}...", expanded=True) as status:
-            st.write(f"📡 Descargando página: `{url_input}`")
-            texto, error = fetch_url(url_input)
-
-            if error:
-                status.update(label="❌ Error al descargar", state="error")
-                st.error(f"**No se pudo descargar la página:** {error}")
-                st.info("""**¿Qué podés hacer?**
-- Verificá que el URL sea correcto y accesible en tu navegador
-- Algunos supers (Walmart CR, PriceSmart) bloquean bots — probá con Automercado o Fresh Market
-- Usá la pestaña 🤖 Extracción con IA para obtener precios estimados""")
-                st.stop()
-
-            if len(texto) < 300:
-                status.update(label="⚠️ Página con poco contenido", state="error")
-                st.warning("La página descargada tiene muy poco texto. Puede requerir JavaScript para cargar (sitio dinámico).")
-                st.info("Probá con Automercado o Fresh Market que tienen mejor compatibilidad.")
-                st.stop()
-
-            st.write(f"✅ Página descargada ({len(texto):,} caracteres)")
-            st.write("🤖 Analizando con IA...")
-
-            client = anthropic.Anthropic(api_key=api_key)
-            try:
-                resp = client.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=2000,
-                    system=SYSTEM_SCRAPER,
-                    messages=[{"role": "user", "content":
-                        f"Supermercado: {super_}\nCategoría sugerida: {cat}\nURL: {url_input}\n\nTexto de la página:\n{texto}"
-                    }],
-                )
-                raw  = resp.content[0].text.strip().replace("```json","").replace("```","")
-                data = json.loads(raw)
-            except json.JSONDecodeError:
-                status.update(label="❌ Error al procesar", state="error")
-                st.error("La IA no pudo procesar el contenido de esta página.")
-                st.stop()
-            except Exception as e:
-                status.update(label="❌ Error", state="error")
-                st.error(f"Error: {e}")
-                st.stop()
-
-            products = data.get("productos", [])
-            err_ia   = data.get("error")
-
-            if err_ia:
-                st.warning(f"⚠️ La IA reportó: {err_ia}")
-
-            if not products:
-                status.update(label="⚠️ Sin productos encontrados", state="error")
-                st.warning("No se encontraron productos en esta página. Probá con una URL de categoría específica.")
-                st.stop()
-
-            status.update(label=f"✅ {len(products)} productos encontrados", state="complete")
-
-        st.success(f"✅ Se extrajeron **{len(products)} productos** de {super_}")
-
-        df_prev = pd.DataFrame(products)
-        st.markdown("**Vista previa — podés editar antes de guardar:**")
-        df_edit = st.data_editor(df_prev, use_container_width=True, num_rows="dynamic", key="df_edit_url")
-
-        col_save, col_info = st.columns([1, 3])
-        if col_save.button("💾 Guardar en base de datos", type="primary", key="save_url"):
-            records = df_edit.to_dict("records")
-            n = save_products(records, super_, cat, metodo="url", url=url_input)
-            st.success(f"✅ {n} productos guardados.")
-            st.rerun()
-        col_info.caption("Podés editar celdas directamente antes de guardar.")
-
-    st.divider()
-
-    # Extracción masiva con URLs conocidas
-    st.markdown("### ⚡ Extracción masiva con URLs conocidas")
-    st.caption("Extrae automáticamente todas las URLs que tenemos guardadas.")
-
-    all_urls = [(s, c, u) for s, cats in URLS_CATEGORIAS.items() for c, u in cats.items()]
-    st.info(f"Tenemos **{len(all_urls)} URLs** de categorías conocidas listas para extraer.")
-
-    sel_supers_bulk = st.multiselect(
-        "Filtrar por supermercado",
+    sel_supers_all = st.multiselect(
+        "Seleccioná los supermercados",
         list(URLS_CATEGORIAS.keys()),
         default=list(URLS_CATEGORIAS.keys()),
+        key="sel_supers_all",
     )
-    urls_filtradas = [(s, c, u) for s, c, u in all_urls if s in sel_supers_bulk]
+    sel_cats_all = st.multiselect(
+        "Seleccioná las categorías",
+        CATEGORIAS,
+        default=CATEGORIAS,
+        key="sel_cats_all",
+    )
 
-    if st.button("🚀 Extraer todas", type="primary",
-                  disabled=not api_key or not urls_filtradas, key="bulk_btn"):
-        client  = anthropic.Anthropic(api_key=api_key)
-        bar     = st.progress(0)
-        log_box = st.empty()
-        logs    = []
+    urls_sel = [
+        (s, c, u)
+        for s, cats in URLS_CATEGORIAS.items()
+        for c, u in cats.items()
+        if s in sel_supers_all and c in sel_cats_all
+    ]
+
+    n_bloqueados = sum(1 for s, _, _ in urls_sel if s in SUPERS_BLOQUEADOS)
+    n_directos   = len(urls_sel) - n_bloqueados
+
+    col_info1, col_info2 = st.columns(2)
+    col_info1.caption(f"🌐 {n_directos} URLs con extracción directa")
+    col_info2.caption(f"🤖 {n_bloqueados} con respaldo de IA")
+
+    if st.button(
+        f"🚀 Extraer todo ({len(urls_sel)} combinaciones)",
+        type="primary",
+        disabled=not api_key or not urls_sel,
+        key="extract_all_btn",
+    ):
+        client      = anthropic.Anthropic(api_key=api_key)
+        bar         = st.progress(0, text="Iniciando extracción...")
+        col_log, col_stats = st.columns([2, 1])
+        log_box     = col_log.empty()
+        stat_box    = col_stats.empty()
+        logs        = []
         total_saved = 0
+        total_ok    = 0
+        total_ia    = 0
+        total_err   = 0
 
-        for i, (super_, cat, url) in enumerate(urls_filtradas):
+        for i, (super_, cat, url) in enumerate(urls_sel):
+            pct  = (i + 1) / len(urls_sel)
+            label = f"{i+1}/{len(urls_sel)} · {super_} · {cat}"
+            bar.progress(pct, text=label)
+
+            # Intentar descarga directa
             texto, error = fetch_url(url)
+            metodo_usado = "url"
+
             if error or len(texto) < 300:
-                logs.append(f"⚠️ {super_} · {cat}: {error or 'página vacía'}")
-                bar.progress((i+1)/len(urls_filtradas))
-                log_box.markdown("\n".join(logs[-8:]))
-                continue
+                # Fallback a IA si la página falla o está bloqueada
+                logs.append(f"🤖 {super_} · {cat}: usando IA (web bloqueada)")
+                log_box.markdown("\n".join(logs[-12:]))
+                try:
+                    resp = client.messages.create(
+                        model="claude-sonnet-4-6", max_tokens=900,
+                        system=SYSTEM_IA,
+                        messages=[{"role": "user", "content":
+                            f"Extraé productos de '{cat}' en '{super_}' CR. "
+                            f"Precios realistas en colones, 6-10 productos."}],
+                    )
+                    raw   = resp.content[0].text.strip().replace("```json","").replace("```","")
+                    prods = json.loads(raw).get("productos", [])
+                    n     = save_products(prods, super_, cat, metodo="ia_fallback", url=url)
+                    total_saved += n
+                    total_ia    += 1
+                    logs.append(f"   ↳ IA guardó {n} productos")
+                except Exception as e:
+                    logs.append(f"   ↳ ❌ Error IA: {e}")
+                    total_err += 1
+            else:
+                # Extracción real desde la web
+                try:
+                    resp = client.messages.create(
+                        model="claude-sonnet-4-6", max_tokens=2000,
+                        system=SYSTEM_SCRAPER,
+                        messages=[{"role": "user", "content":
+                            f"Supermercado: {super_}\nCategoría: {cat}\nURL: {url}\n\nTexto:\n{texto[:50000]}"}],
+                    )
+                    raw   = resp.content[0].text.strip().replace("```json","").replace("```","")
+                    data  = json.loads(raw)
+                    prods = data.get("productos", [])
+                    if not prods:
+                        raise ValueError(data.get("error", "sin productos"))
+                    n = save_products(prods, super_, cat, metodo="url", url=url)
+                    total_saved += n
+                    total_ok    += 1
+                    logs.append(f"✅ {super_} · {cat}: {n} productos (web)")
+                except Exception as e:
+                    # Si falla el scraping, intentar IA
+                    logs.append(f"🤖 {super_} · {cat}: web falló, usando IA")
+                    try:
+                        resp = client.messages.create(
+                            model="claude-sonnet-4-6", max_tokens=900,
+                            system=SYSTEM_IA,
+                            messages=[{"role": "user", "content":
+                                f"Extraé productos de '{cat}' en '{super_}' CR. "
+                                f"Precios realistas en colones, 6-10 productos."}],
+                        )
+                        raw   = resp.content[0].text.strip().replace("```json","").replace("```","")
+                        prods = json.loads(raw).get("productos", [])
+                        n     = save_products(prods, super_, cat, metodo="ia_fallback", url=url)
+                        total_saved += n
+                        total_ia    += 1
+                        logs.append(f"   ↳ IA guardó {n} productos")
+                    except Exception as e2:
+                        logs.append(f"   ↳ ❌ Error: {e2}")
+                        total_err += 1
 
-            try:
-                resp = client.messages.create(
-                    model="claude-sonnet-4-6", max_tokens=2000,
-                    system=SYSTEM_SCRAPER,
-                    messages=[{"role": "user", "content":
-                        f"Supermercado: {super_}\nCategoría: {cat}\nURL: {url}\n\nTexto:\n{texto[:50000]}"
-                    }],
-                )
-                raw  = resp.content[0].text.strip().replace("```json","").replace("```","")
-                data = json.loads(raw)
-                prods = data.get("productos", [])
-                n = save_products(prods, super_, cat, metodo="url", url=url)
-                total_saved += n
-                logs.append(f"✅ {super_} · {cat}: {n} productos")
-            except Exception as e:
-                logs.append(f"❌ {super_} · {cat}: {e}")
+            log_box.markdown("\n".join(logs[-14:]))
+            stat_box.markdown(f"""
+**Progreso**
+- ✅ Web directa: {total_ok}
+- 🤖 IA respaldo: {total_ia}
+- ❌ Errores: {total_err}
+- 💾 Guardados: **{total_saved}**
+""")
 
-            bar.progress((i+1)/len(urls_filtradas))
-            log_box.markdown("\n".join(logs[-8:]))
-
-        st.success(f"✅ Extracción completa: **{total_saved} productos** guardados.")
+        bar.progress(1.0, text="✅ ¡Extracción completa!")
+        st.success(f"🎉 Terminado: **{total_saved} productos** guardados de {len(urls_sel)} combinaciones.")
         st.rerun()
+
+    st.divider()
+
+    # ── Extracción de URL individual ──────────────────────────────────────────
+    with st.expander("🔍 Extraer una URL específica", expanded=False):
+        col_url, col_cat = st.columns([3, 1])
+        url_input    = col_url.text_input("URL", placeholder="https://www.automercado.co.cr/lacteos", key="url_input")
+        cat_override = col_cat.selectbox("Categoría", ["Auto"] + CATEGORIAS, key="cat_override")
+
+        if url_input:
+            st.caption(f"Supermercado detectado: **{detectar_supermercado(url_input)}**")
+
+        if st.button("Extraer", type="primary", disabled=not url_input or not api_key, key="extract_one"):
+            super_ = detectar_supermercado(url_input)
+            cat    = cat_override if cat_override != "Auto" else "General"
+
+            with st.status("Extrayendo...", expanded=True) as status:
+                st.write(f"📡 Descargando `{url_input}`")
+                texto, error = fetch_url(url_input)
+
+                if error or len(texto) < 300:
+                    st.warning(f"Web bloqueada o vacía ({error or 'poco contenido'}). Usando IA...")
+                    try:
+                        client = anthropic.Anthropic(api_key=api_key)
+                        resp   = client.messages.create(
+                            model="claude-sonnet-4-6", max_tokens=900, system=SYSTEM_IA,
+                            messages=[{"role":"user","content":
+                                f"Extraé productos de '{cat}' en '{super_}' CR. Precios en colones, 6-10 productos."}],
+                        )
+                        raw   = resp.content[0].text.strip().replace("```json","").replace("```","")
+                        prods = json.loads(raw).get("productos",[])
+                        status.update(label=f"🤖 IA: {len(prods)} productos", state="complete")
+                    except Exception as e:
+                        status.update(label="❌ Error", state="error")
+                        st.error(str(e)); st.stop()
+                else:
+                    st.write(f"✅ {len(texto):,} caracteres descargados. Analizando...")
+                    client = anthropic.Anthropic(api_key=api_key)
+                    try:
+                        resp  = client.messages.create(
+                            model="claude-sonnet-4-6", max_tokens=2000, system=SYSTEM_SCRAPER,
+                            messages=[{"role":"user","content":
+                                f"Supermercado:{super_}\nCategoría:{cat}\nURL:{url_input}\n\nTexto:\n{texto}"}],
+                        )
+                        raw   = resp.content[0].text.strip().replace("```json","").replace("```","")
+                        prods = json.loads(raw).get("productos",[])
+                        status.update(label=f"✅ {len(prods)} productos", state="complete")
+                    except Exception as e:
+                        status.update(label="❌ Error", state="error")
+                        st.error(str(e)); st.stop()
+
+            if prods:
+                df_edit = st.data_editor(pd.DataFrame(prods), use_container_width=True, num_rows="dynamic")
+                if st.button("💾 Guardar", type="primary", key="save_one"):
+                    n = save_products(df_edit.to_dict("records"), super_, cat, metodo="url", url=url_input)
+                    st.success(f"✅ {n} productos guardados."); st.rerun()
+            else:
+                st.warning("No se encontraron productos.")
+
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 · CHAT
