@@ -405,7 +405,7 @@ with tab_url:
     if st.button(
         f"🚀 Extraer todo ({len(urls_sel)} combinaciones)",
         type="primary",
-        disabled=not api_key or not urls_sel,
+
         key="extract_all_btn",
     ):
         client      = anthropic.Anthropic(api_key=api_key)
@@ -648,8 +648,11 @@ with tab_ia:
     if total_tasks:
         st.info(f"**{total_tasks}** extracciones ({len(sel_supers)} supers × {len(sel_cats)} categorías)")
 
-    if st.button("🚀 Iniciar", type="primary",
-                  disabled=not api_key or not sel_supers or not sel_cats):
+    if st.button("🚀 Iniciar", type="primary", key="ia_start_btn"):
+        if not api_key:
+            st.error("⚠️ Ingresá tu API Key."); st.stop()
+        if not sel_supers or not sel_cats:
+            st.error("⚠️ Seleccioná supermercados y categorías."); st.stop()
         client = anthropic.Anthropic(api_key=api_key)
         bar = st.progress(0); log_box = st.empty()
         done = errors = saved = 0; logs = []
