@@ -34,21 +34,22 @@ def get_conn():
 
 def init_db():
     with get_conn() as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS productos (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                nombre        TEXT NOT NULL,
-                marca         TEXT,
-                categoria     TEXT NOT NULL,
-                supermercado  TEXT NOT NULL,
-                precio        REAL NOT NULL,
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre          TEXT NOT NULL,
+                marca           TEXT,
+                categoria       TEXT NOT NULL,
+                supermercado    TEXT NOT NULL,
+                precio          REAL NOT NULL,
                 precio_rebajado REAL,
-                unidad        TEXT,
-                en_stock      INTEGER DEFAULT 1,
-                notas         TEXT,
-                url_fuente    TEXT,
-                metodo        TEXT,
-                extraido_en   TEXT NOT NULL
+                unidad          TEXT,
+                en_stock        INTEGER DEFAULT 1,
+                notas           TEXT,
+                url_fuente      TEXT,
+                metodo          TEXT,
+                extraido_en     TEXT NOT NULL
             )""")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS extracciones (
@@ -59,43 +60,96 @@ def init_db():
                 productos_n   INTEGER,
                 realizado_en  TEXT NOT NULL
             )""")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS errores (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                supermercado  TEXT,
+                categoria     TEXT,
+                url           TEXT,
+                etapa         TEXT,
+                mensaje       TEXT NOT NULL,
+                detalle       TEXT,
+                registrado_en TEXT NOT NULL
+            )""")
         conn.commit()
 
 init_db()
 
+def save_error(supermercado, categoria, url, etapa, mensaje, detalle=""):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with get_conn() as conn:
+            conn.execute("""
+                INSERT INTO errores (supermercado,categoria,url,etapa,mensaje,detalle,registrado_en)
+                VALUES (?,?,?,?,?,?,?)""", (supermercado, categoria, url, etapa, str(mensaje)[:500], str(detalle)[:1000], ts))
+            conn.commit()
+    except Exception as e:
+        pass  # no podemos hacer nada si la DB falla
+
 def save_products(products, supermercado, categoria, metodo="url", url=""):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     saved = 0
+    skipped = 0
+    if not products:
+        save_error(supermercado, categoria, url, "save_products", "Lista de productos vacía", f"metodo={metodo}")
+        return 0
     with get_conn() as conn:
         for p in products:
-            precio = p.get("precio", p.get("price", 0))
             try:
-                precio = float(str(precio).replace(",","").replace("₡","").replace(" ",""))
-            except:
-                precio = 0
-            if precio <= 0:
+                precio_raw = p.get("precio", p.get("price", 0))
+                precio = float(str(precio_raw).replace(",","").replace("₡","").replace(" ","").replace(".","").strip() or 0)
+                # Si el precio viene con punto decimal real (ej 1234.50) preservarlo
+                if precio > 100000:  # posible que quitamos punto decimal incorrecto
+                    precio2 = float(str(precio_raw).replace(",","").replace("₡","").replace(" ","").strip() or 0)
+                    if precio2 < precio:
+                        precio = precio2
+            except Exception as e:
+                save_error(supermercado, categoria, url, "parse_precio",
+                           f"No se pudo parsear precio: {p.get('precio', p.get('price', '?'))}", str(p))
+                skipped += 1
                 continue
-            conn.execute("""
-                INSERT INTO productos
-                (nombre,marca,categoria,supermercado,precio,precio_rebajado,
-                 unidad,en_stock,notas,url_fuente,metodo,extraido_en)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", (
-                p.get("nombre", p.get("name", ""))[:200],
-                p.get("marca",  p.get("brand", "")),
-                p.get("categoria", p.get("category", categoria)),
-                p.get("supermercado", p.get("supermarket", supermercado)),
-                precio,
-                p.get("precio_rebajado") or None,
-                p.get("unidad", p.get("unit", "")),
-                1 if p.get("en_stock", p.get("inStock", True)) else 0,
-                p.get("notas", p.get("notes", "")),
-                url, metodo, ts,
-            ))
-            saved += 1
+
+            if precio <= 0:
+                save_error(supermercado, categoria, url, "precio_cero",
+                           f"Precio 0 o negativo en producto: {p.get('nombre','?')}", str(p))
+                skipped += 1
+                continue
+
+            nombre = p.get("nombre", p.get("name", "")).strip()
+            if not nombre:
+                skipped += 1
+                continue
+
+            try:
+                conn.execute("""
+                    INSERT INTO productos
+                    (nombre,marca,categoria,supermercado,precio,precio_rebajado,
+                     unidad,en_stock,notas,url_fuente,metodo,extraido_en)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", (
+                    nombre[:200],
+                    p.get("marca",  p.get("brand", "")),
+                    p.get("categoria", p.get("category", categoria)),
+                    p.get("supermercado", p.get("supermarket", supermercado)),
+                    precio,
+                    p.get("precio_rebajado") or None,
+                    p.get("unidad", p.get("unit", "")),
+                    1 if p.get("en_stock", p.get("inStock", True)) else 0,
+                    p.get("notas", p.get("notes", "")),
+                    url, metodo, ts,
+                ))
+                saved += 1
+            except Exception as e:
+                save_error(supermercado, categoria, url, "insert_db", str(e), str(p))
+                skipped += 1
+
         conn.execute("""
             INSERT INTO extracciones (supermercado,url,metodo,productos_n,realizado_en)
             VALUES (?,?,?,?,?)""", (supermercado, url, metodo, saved, ts))
         conn.commit()
+
+    if skipped > 0:
+        save_error(supermercado, categoria, url, "resumen",
+                   f"{skipped} productos omitidos de {len(products)} totales", f"guardados={saved}")
     return saved
 
 def load_products(supermercado=None, categoria=None, search=None):
@@ -124,10 +178,25 @@ def get_distinct(col):
         rows = conn.execute(f"SELECT DISTINCT {col} FROM productos ORDER BY {col}").fetchall()
     return [r[0] for r in rows]
 
+def load_errors():
+    with get_conn() as conn:
+        return pd.read_sql_query(
+            "SELECT * FROM errores ORDER BY registrado_en DESC", conn)
+
+def clear_errors():
+    with get_conn() as conn:
+        conn.execute("DELETE FROM errores")
+        conn.commit()
+
+def error_count():
+    with get_conn() as conn:
+        return conn.execute("SELECT COUNT(*) FROM errores").fetchone()[0]
+
 def delete_all():
     with get_conn() as conn:
         conn.execute("DELETE FROM productos")
         conn.execute("DELETE FROM extracciones")
+        conn.execute("DELETE FROM errores")
         conn.commit()
 
 # ── Constantes ────────────────────────────────────────────────────────────────
@@ -341,11 +410,12 @@ with st.sidebar:
         st.rerun()
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_url, tab_chat, tab_ia, tab_db = st.tabs([
+tab_url, tab_chat, tab_ia, tab_db, tab_err = st.tabs([
     "🔗 Extraer por URL",
     "💬 Chat",
     "🤖 Extracción con IA",
     "🗄️ Base de datos",
+    "⚠️ Errores",
 ])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -742,3 +812,74 @@ with tab_db:
                 file_name=f"precios_cr_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
                 mime="text/csv",
             )
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 5 · ERRORES
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_err:
+    st.subheader("⚠️ Registro de errores")
+    st.caption("Todos los errores durante extracción y guardado quedan registrados acá.")
+
+    n_err = error_count()
+    if n_err == 0:
+        st.success("✅ No hay errores registrados.")
+    else:
+        st.error(f"Se encontraron **{n_err} errores** registrados.")
+
+        df_err = load_errors()
+        if not df_err.empty:
+            # Resumen por etapa
+            st.markdown("**Errores por etapa:**")
+            resumen = df_err.groupby("etapa").size().reset_index(name="cantidad")
+            resumen = resumen.sort_values("cantidad", ascending=False)
+            st.dataframe(resumen, use_container_width=True, hide_index=True)
+
+            st.divider()
+
+            # Filtro por supermercado
+            supers_err = ["Todos"] + sorted(df_err["supermercado"].dropna().unique().tolist())
+            etapas_err = ["Todas"] + sorted(df_err["etapa"].dropna().unique().tolist())
+            fe1, fe2 = st.columns(2)
+            f_super_err = fe1.selectbox("Supermercado", supers_err, key="f_super_err")
+            f_etapa_err = fe2.selectbox("Etapa", etapas_err, key="f_etapa_err")
+
+            df_show = df_err.copy()
+            if f_super_err != "Todos":
+                df_show = df_show[df_show["supermercado"] == f_super_err]
+            if f_etapa_err != "Todas":
+                df_show = df_show[df_show["etapa"] == f_etapa_err]
+
+            st.caption(f"{len(df_show)} errores mostrados")
+            st.dataframe(
+                df_show[["registrado_en","supermercado","categoria","etapa","mensaje","detalle","url"]],
+                use_container_width=True,
+                height=380,
+            )
+
+            st.divider()
+            col_dl, col_cl = st.columns([1, 3])
+            csv_err = df_err.to_csv(index=False).encode("utf-8")
+            col_dl.download_button(
+                "⬇️ Exportar errores CSV",
+                data=csv_err,
+                file_name=f"errores_cr_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv",
+            )
+            if col_cl.button("🗑️ Limpiar errores", key="clear_err_btn"):
+                clear_errors()
+                st.success("Errores eliminados.")
+                st.rerun()
+
+            # Diagnóstico rápido
+            st.divider()
+            st.markdown("**🔍 Diagnóstico rápido:**")
+
+            if "precio_cero" in df_err["etapa"].values or "parse_precio" in df_err["etapa"].values:
+                st.warning("🔢 Hay errores de precio — la IA puede estar devolviendo precios en formato incorrecto o como texto.")
+            if "insert_db" in df_err["etapa"].values:
+                st.warning("💾 Hay errores al insertar en la DB — puede ser un problema de permisos o de schema.")
+            if "save_products" in df_err["etapa"].values:
+                st.warning("📭 Algunas extracciones devolvieron listas vacías — la IA no encontró productos o el JSON fue inválido.")
+            n_fallback = len(df_err[df_err["etapa"] == "resumen"])
+            if n_fallback > 0:
+                st.info(f"ℹ️ {n_fallback} categorías tuvieron productos omitidos. Revisá los detalles arriba.")
