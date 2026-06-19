@@ -3,13 +3,10 @@ import anthropic
 import sqlite3
 import json
 import pandas as pd
-import re
-import requests
 from datetime import datetime
 from pathlib import Path
-from bs4 import BeautifulSoup
 
-# ── Página ───────────────────────────────────────────────────────────────────
+# ── Página ────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Precios CR", page_icon="🛒", layout="wide")
 
 st.markdown("""
@@ -21,20 +18,30 @@ st.markdown("""
 .badge-price   { background:#FAEEDA; color:#633806; }
 .badge-maxi    { background:#FAECE7; color:#712B13; }
 .badge-fresh   { background:#FBEAF0; color:#72243E; }
-.url-card { background:#f8f8f6; border:0.5px solid #ddd; border-radius:10px;
-  padding:14px 18px; margin-bottom:10px; }
 </style>
 """, unsafe_allow_html=True)
+
+# ── API Key — un solo lugar ───────────────────────────────────────────────────
+def get_api_key():
+    """Lee la API key desde secrets o desde session_state."""
+    try:
+        key = st.secrets.get("ANTHROPIC_API_KEY", "")
+        if key:
+            return key
+    except Exception:
+        pass
+    return st.session_state.get("api_key", "")
 
 # ── SQLite ────────────────────────────────────────────────────────────────────
 DB_PATH = Path("precios_cr.db")
 
 def get_conn():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
 
 def init_db():
     with get_conn() as conn:
-        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS productos (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,27 +54,16 @@ def init_db():
                 unidad          TEXT,
                 en_stock        INTEGER DEFAULT 1,
                 notas           TEXT,
-                url_fuente      TEXT,
-                metodo          TEXT,
+                fuente          TEXT,
                 extraido_en     TEXT NOT NULL
-            )""")
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS extracciones (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                supermercado  TEXT,
-                url           TEXT,
-                metodo        TEXT,
-                productos_n   INTEGER,
-                realizado_en  TEXT NOT NULL
             )""")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS errores (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 supermercado  TEXT,
                 categoria     TEXT,
-                url           TEXT,
                 etapa         TEXT,
-                mensaje       TEXT NOT NULL,
+                mensaje       TEXT,
                 detalle       TEXT,
                 registrado_en TEXT NOT NULL
             )""")
@@ -75,81 +71,52 @@ def init_db():
 
 init_db()
 
-def save_error(supermercado, categoria, url, etapa, mensaje, detalle=""):
+def save_error(supermercado, categoria, etapa, mensaje, detalle=""):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         with get_conn() as conn:
-            conn.execute("""
-                INSERT INTO errores (supermercado,categoria,url,etapa,mensaje,detalle,registrado_en)
-                VALUES (?,?,?,?,?,?,?)""", (supermercado, categoria, url, etapa, str(mensaje)[:500], str(detalle)[:1000], ts))
+            conn.execute("""INSERT INTO errores
+                (supermercado,categoria,etapa,mensaje,detalle,registrado_en)
+                VALUES (?,?,?,?,?,?)""",
+                (supermercado, categoria, etapa, str(mensaje)[:500], str(detalle)[:1000], ts))
             conn.commit()
-    except Exception as e:
-        pass  # no podemos hacer nada si la DB falla
+    except Exception:
+        pass
 
-def save_products(products, supermercado, categoria, metodo="url", url=""):
+def save_products(products, supermercado, categoria, fuente="web_search"):
+    if not products:
+        save_error(supermercado, categoria, "save", "Lista vacía")
+        return 0
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     saved = 0
-    skipped = 0
-    if not products:
-        save_error(supermercado, categoria, url, "save_products", "Lista de productos vacía", f"metodo={metodo}")
-        return 0
     with get_conn() as conn:
         for p in products:
             try:
                 precio_raw = p.get("precio", p.get("price", 0))
-                precio = float(str(precio_raw).replace(",","").replace("₡","").replace(" ","").replace(".","").strip() or 0)
-                # Si el precio viene con punto decimal real (ej 1234.50) preservarlo
-                if precio > 100000:  # posible que quitamos punto decimal incorrecto
-                    precio2 = float(str(precio_raw).replace(",","").replace("₡","").replace(" ","").strip() or 0)
-                    if precio2 < precio:
-                        precio = precio2
-            except Exception as e:
-                save_error(supermercado, categoria, url, "parse_precio",
-                           f"No se pudo parsear precio: {p.get('precio', p.get('price', '?'))}", str(p))
-                skipped += 1
-                continue
-
-            if precio <= 0:
-                save_error(supermercado, categoria, url, "precio_cero",
-                           f"Precio 0 o negativo en producto: {p.get('nombre','?')}", str(p))
-                skipped += 1
-                continue
-
-            nombre = p.get("nombre", p.get("name", "")).strip()
-            if not nombre:
-                skipped += 1
-                continue
-
-            try:
-                conn.execute("""
-                    INSERT INTO productos
+                precio = float(str(precio_raw).replace(",","").replace("₡","").replace(" ","").strip() or 0)
+                nombre = str(p.get("nombre", p.get("name",""))).strip()[:200]
+                if precio <= 0 or not nombre:
+                    save_error(supermercado, categoria, "precio_invalido",
+                               f"precio={precio_raw} nombre={nombre}")
+                    continue
+                conn.execute("""INSERT INTO productos
                     (nombre,marca,categoria,supermercado,precio,precio_rebajado,
-                     unidad,en_stock,notas,url_fuente,metodo,extraido_en)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", (
-                    nombre[:200],
-                    p.get("marca",  p.get("brand", "")),
+                     unidad,en_stock,notas,fuente,extraido_en)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""", (
+                    nombre,
+                    p.get("marca", p.get("brand","")),
                     p.get("categoria", p.get("category", categoria)),
                     p.get("supermercado", p.get("supermarket", supermercado)),
                     precio,
                     p.get("precio_rebajado") or None,
-                    p.get("unidad", p.get("unit", "")),
-                    1 if p.get("en_stock", p.get("inStock", True)) else 0,
-                    p.get("notas", p.get("notes", "")),
-                    url, metodo, ts,
+                    p.get("unidad", p.get("unit","")),
+                    1 if p.get("en_stock", True) else 0,
+                    p.get("notas", p.get("notes","")),
+                    fuente, ts,
                 ))
                 saved += 1
             except Exception as e:
-                save_error(supermercado, categoria, url, "insert_db", str(e), str(p))
-                skipped += 1
-
-        conn.execute("""
-            INSERT INTO extracciones (supermercado,url,metodo,productos_n,realizado_en)
-            VALUES (?,?,?,?,?)""", (supermercado, url, metodo, saved, ts))
-        conn.commit()
-
-    if skipped > 0:
-        save_error(supermercado, categoria, url, "resumen",
-                   f"{skipped} productos omitidos de {len(products)} totales", f"guardados={saved}")
+                save_error(supermercado, categoria, "insert", str(e), str(p)[:300])
     return saved
 
 def load_products(supermercado=None, categoria=None, search=None):
@@ -170,32 +137,18 @@ def db_stats():
         total  = conn.execute("SELECT COUNT(*) FROM productos").fetchone()[0]
         supers = conn.execute("SELECT COUNT(DISTINCT supermercado) FROM productos").fetchone()[0]
         cats   = conn.execute("SELECT COUNT(DISTINCT categoria) FROM productos").fetchone()[0]
-        last   = conn.execute("SELECT MAX(realizado_en) FROM extracciones").fetchone()[0]
-    return total, supers, cats, last
+        last   = conn.execute("SELECT MAX(extraido_en) FROM productos").fetchone()[0]
+        n_err  = conn.execute("SELECT COUNT(*) FROM errores").fetchone()[0]
+    return total, supers, cats, last, n_err
 
 def get_distinct(col):
     with get_conn() as conn:
-        rows = conn.execute(f"SELECT DISTINCT {col} FROM productos ORDER BY {col}").fetchall()
-    return [r[0] for r in rows]
-
-def load_errors():
-    with get_conn() as conn:
-        return pd.read_sql_query(
-            "SELECT * FROM errores ORDER BY registrado_en DESC", conn)
-
-def clear_errors():
-    with get_conn() as conn:
-        conn.execute("DELETE FROM errores")
-        conn.commit()
-
-def error_count():
-    with get_conn() as conn:
-        return conn.execute("SELECT COUNT(*) FROM errores").fetchone()[0]
+        return [r[0] for r in conn.execute(
+            f"SELECT DISTINCT {col} FROM productos WHERE {col} IS NOT NULL ORDER BY {col}").fetchall()]
 
 def delete_all():
     with get_conn() as conn:
         conn.execute("DELETE FROM productos")
-        conn.execute("DELETE FROM extracciones")
         conn.execute("DELETE FROM errores")
         conn.commit()
 
@@ -207,183 +160,125 @@ CATEGORIAS = [
     "Higiene personal","Aceites y condimentos",
 ]
 
-# URLs de categorías conocidas para extracción directa
-URLS_CATEGORIAS = {
-    "Automercado": {
-        "Lácteos":               "https://www.automercado.co.cr/lacteos",
-        "Carnes":                "https://www.automercado.co.cr/carnes",
-        "Frutas y verduras":     "https://www.automercado.co.cr/frutas-y-verduras",
-        "Bebidas":               "https://www.automercado.co.cr/bebidas",
-        "Panadería":             "https://www.automercado.co.cr/panaderia",
-        "Granos y cereales":     "https://www.automercado.co.cr/granos-y-legumbres",
-        "Limpieza":              "https://www.automercado.co.cr/limpieza-del-hogar",
-        "Snacks":                "https://www.automercado.co.cr/snacks-y-dulces",
-        "Congelados":            "https://www.automercado.co.cr/congelados",
-        "Higiene personal":      "https://www.automercado.co.cr/cuidado-personal",
-        "Aceites y condimentos": "https://www.automercado.co.cr/aceites-y-condimentos",
-    },
-    "Maxi Palí": {
-        "Lácteos":               "https://www.maxipali.co.cr/lacteos",
-        "Carnes":                "https://www.maxipali.co.cr/carnes",
-        "Frutas y verduras":     "https://www.maxipali.co.cr/frutas-y-vegetales",
-        "Bebidas":               "https://www.maxipali.co.cr/bebidas",
-        "Granos y cereales":     "https://www.maxipali.co.cr/granos-y-cereales",
-        "Limpieza":              "https://www.maxipali.co.cr/limpieza-del-hogar",
-        "Snacks":                "https://www.maxipali.co.cr/snacks",
-        "Congelados":            "https://www.maxipali.co.cr/congelados",
-        "Higiene personal":      "https://www.maxipali.co.cr/cuidado-personal",
-        "Aceites y condimentos": "https://www.maxipali.co.cr/aceites-y-condimentos",
-        "Panadería":             "https://www.maxipali.co.cr/panaderia",
-    },
-    "Fresh Market": {
-        "Lácteos":               "https://www.freshmarket.co.cr/lacteos",
-        "Carnes":                "https://www.freshmarket.co.cr/carnes",
-        "Frutas y verduras":     "https://www.freshmarket.co.cr/frutas-y-verduras",
-        "Bebidas":               "https://www.freshmarket.co.cr/bebidas",
-        "Panadería":             "https://www.freshmarket.co.cr/panaderia",
-        "Limpieza":              "https://www.freshmarket.co.cr/limpieza",
-        "Snacks":                "https://www.freshmarket.co.cr/snacks",
-        "Congelados":            "https://www.freshmarket.co.cr/congelados",
-        "Higiene personal":      "https://www.freshmarket.co.cr/cuidado-personal",
-        "Aceites y condimentos": "https://www.freshmarket.co.cr/aceites-y-condimentos",
-        "Granos y cereales":     "https://www.freshmarket.co.cr/granos-y-cereales",
-    },
-    "Walmart CR": {
-        "Lácteos":               "https://www.walmart.co.cr/supermercado/lacteos",
-        "Carnes":                "https://www.walmart.co.cr/supermercado/carnes",
-        "Frutas y verduras":     "https://www.walmart.co.cr/supermercado/frutas-y-verduras",
-        "Bebidas":               "https://www.walmart.co.cr/supermercado/bebidas",
-        "Granos y cereales":     "https://www.walmart.co.cr/supermercado/granos-y-cereales",
-        "Limpieza":              "https://www.walmart.co.cr/supermercado/limpieza",
-        "Snacks":                "https://www.walmart.co.cr/supermercado/snacks",
-        "Congelados":            "https://www.walmart.co.cr/supermercado/congelados",
-        "Higiene personal":      "https://www.walmart.co.cr/supermercado/cuidado-personal",
-        "Aceites y condimentos": "https://www.walmart.co.cr/supermercado/aceites-y-condimentos",
-        "Panadería":             "https://www.walmart.co.cr/supermercado/panaderia",
-    },
-    "PriceSmart": {
-        "Lácteos":               "https://www.pricesmart.com/es/cr/categoria/lacteos",
-        "Carnes":                "https://www.pricesmart.com/es/cr/categoria/carnes",
-        "Frutas y verduras":     "https://www.pricesmart.com/es/cr/categoria/frutas-y-verduras",
-        "Bebidas":               "https://www.pricesmart.com/es/cr/categoria/bebidas",
-        "Granos y cereales":     "https://www.pricesmart.com/es/cr/categoria/granos-y-cereales",
-        "Limpieza":              "https://www.pricesmart.com/es/cr/categoria/limpieza",
-        "Snacks":                "https://www.pricesmart.com/es/cr/categoria/snacks",
-        "Congelados":            "https://www.pricesmart.com/es/cr/categoria/congelados",
-        "Higiene personal":      "https://www.pricesmart.com/es/cr/categoria/cuidado-personal",
-        "Aceites y condimentos": "https://www.pricesmart.com/es/cr/categoria/aceites-y-condimentos",
-        "Panadería":             "https://www.pricesmart.com/es/cr/categoria/panaderia",
-    },
-}
+SYSTEM_EXTRACTOR = """Eres un extractor de precios de supermercados de Costa Rica.
+Usá la herramienta de búsqueda web para encontrar precios REALES y actuales.
+Buscá en los sitios oficiales: walmart.co.cr, automercado.co.cr, maxipali.co.cr, freshmarket.co.cr, pricesmart.com/cr
 
-# Supers con protección anti-bot conocida → usar IA como respaldo
-SUPERS_BLOQUEADOS = {"Walmart CR", "PriceSmart"}
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "es-CR,es;q=0.9",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-}
-
-SYSTEM_SCRAPER = """Eres un extractor experto de precios de supermercados de Costa Rica.
-Recibirás texto extraído del HTML de una página de supermercado.
-Responde SOLO con JSON válido, sin texto extra, sin backticks.
-Estructura:
+Después de buscar, responde SOLO con JSON válido sin backticks:
 {
   "productos": [
     {
-      "nombre": "nombre completo del producto",
-      "marca": "marca si está disponible",
-      "categoria": "categoría inferida",
-      "supermercado": "nombre del supermercado",
+      "nombre": "nombre completo",
+      "marca": "marca",
+      "categoria": "categoría",
+      "supermercado": "nombre exacto",
       "precio": 1234,
       "precio_rebajado": null,
-      "unidad": "tamaño/presentación",
+      "unidad": "presentación/tamaño",
       "en_stock": true,
-      "notas": "oferta o descuento si aplica"
-    }
-  ],
-  "total_encontrados": 10,
-  "error": null
-}
-- Extrae el precio numérico en colones, solo el número sin símbolos.
-- Si hay precio tachado y precio rebajado, incluí ambos.
-- Si no encontrás productos claros devolvé {"productos": [], "error": "razón"}.
-- Inferí la categoría desde el nombre del producto."""
-
-SYSTEM_CHAT = """Eres un asistente experto en precios de supermercados de Costa Rica.
-Responde en español, conversacional y útil.
-Supermercados: Walmart CR, Automercado, PriceSmart, Maxi Palí, Fresh Market.
-Precios en colones costarricenses (₡).
-Si te dan datos de la base de datos úsalos para responder con precisión."""
-
-SYSTEM_IA = """Eres un extractor de precios de supermercados de Costa Rica.
-Responde SOLO con JSON válido, sin texto extra, sin backticks.
-{
-  "productos": [
-    {
-      "nombre": "nombre del producto",
-      "marca": "marca",
-      "categoria": "categoría exacta dada",
-      "supermercado": "nombre exacto del supermercado",
-      "precio": 1234,
-      "unidad": "tamaño/presentación",
-      "en_stock": true,
-      "notas": ""
+      "notas": "oferta u observación"
     }
   ]
 }
-Precios en colones costarricenses, valores realistas 2024-2025.
-Marcas: Dos Pinos, Numar, Sabrostar, Palma Tica, Supremo, Buen Provecho, Coronado.
-Generá entre 6 y 10 productos."""
+- Precio en colones costarricenses, solo número sin símbolos.
+- Si no encontrás precios reales, indicalo con {"productos":[],"error":"no encontrado"}.
+- No inventes precios. Solo reportá lo que encontraste en la web."""
 
-# ── Fetch de URL ──────────────────────────────────────────────────────────────
-def fetch_url(url: str) -> tuple[str, str]:
-    """Descarga una URL y devuelve (texto_limpio, error)"""
+SYSTEM_CHAT = """Eres un asistente experto en precios de supermercados de Costa Rica.
+Tenés acceso a búsqueda web — usala para encontrar precios actuales cuando te lo pidan.
+Responde en español, de forma conversacional y útil.
+Supermercados: Walmart CR, Automercado, PriceSmart, Maxi Palí, Fresh Market.
+Precios en colones costarricenses (₡).
+Si te dan datos de la base de datos, priorizalos en tu respuesta."""
+
+# ── Función de extracción con web search ─────────────────────────────────────
+def extraer_con_web_search(api_key, supermercado, categoria, status_placeholder=None):
+    """Usa la API de Anthropic con web_search para obtener precios reales."""
+    sitios = {
+        "Walmart CR":   "walmart.co.cr",
+        "Automercado":  "automercado.co.cr",
+        "PriceSmart":   "pricesmart.com/cr",
+        "Maxi Palí":    "maxipali.co.cr",
+        "Fresh Market": "freshmarket.co.cr",
+    }
+    sitio = sitios.get(supermercado, supermercado.lower().replace(" ",""))
+
+    prompt = (
+        f"Buscá precios actuales de productos de la categoría '{categoria}' "
+        f"en {supermercado} Costa Rica. "
+        f"Buscá en el sitio {sitio} o en búsquedas recientes de precios CR. "
+        f"Extraé al menos 6 productos con sus precios reales en colones. "
+        f"Devolvé solo el JSON."
+    )
+
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
+        client = anthropic.Anthropic(api_key=api_key)
+        resp = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1500,
+            system=SYSTEM_EXTRACTOR,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=[{"role": "user", "content": prompt}],
+        )
 
-        # Quitar scripts, styles, nav, footer
-        for tag in soup(["script","style","nav","footer","header","noscript","svg","iframe"]):
-            tag.decompose()
+        # Extraer el texto final (puede haber tool_use blocks)
+        full_text = ""
+        for block in resp.content:
+            if hasattr(block, "text"):
+                full_text += block.text
 
-        text = soup.get_text(separator=" ", strip=True)
-        text = re.sub(r'\s+', ' ', text)
-        # Limitar a 60k caracteres
-        return text[:60000], None
+        if not full_text.strip():
+            save_error(supermercado, categoria, "respuesta_vacia", "Sin texto en respuesta")
+            return []
 
-    except requests.exceptions.Timeout:
-        return "", "La página tardó demasiado en responder (timeout)."
-    except requests.exceptions.HTTPError as e:
-        return "", f"Error HTTP {e.response.status_code} — la página bloqueó el acceso."
-    except requests.exceptions.ConnectionError:
-        return "", "No se pudo conectar a la página. Verificá el URL."
+        clean = full_text.strip().replace("```json","").replace("```","").strip()
+        # Buscar el JSON en el texto
+        start = clean.find("{")
+        end   = clean.rfind("}") + 1
+        if start == -1 or end == 0:
+            save_error(supermercado, categoria, "json_no_encontrado", clean[:300])
+            return []
+
+        data  = json.loads(clean[start:end])
+        prods = data.get("productos", [])
+        err   = data.get("error")
+
+        if err:
+            save_error(supermercado, categoria, "web_search_error", err)
+
+        return prods
+
+    except json.JSONDecodeError as e:
+        save_error(supermercado, categoria, "json_parse", str(e), full_text[:300])
+        return []
+    except anthropic.AuthenticationError:
+        save_error(supermercado, categoria, "auth_error", "API Key inválida")
+        raise
     except Exception as e:
-        return "", str(e)
-
-def detectar_supermercado(url: str) -> str:
-    url_l = url.lower()
-    if "walmart"      in url_l: return "Walmart CR"
-    if "automercado"  in url_l: return "Automercado"
-    if "pricesmart"   in url_l: return "PriceSmart"
-    if "maxipali"     in url_l: return "Maxi Palí"
-    if "freshmarket"  in url_l: return "Fresh Market"
-    return "Desconocido"
+        save_error(supermercado, categoria, "extraccion", str(e))
+        return []
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.title("⚙️ Configuración")
-    api_key = st.secrets.get("ANTHROPIC_API_KEY", "") if hasattr(st, "secrets") else ""
-    if not api_key:
-        api_key = st.text_input("API Key de Anthropic", type="password", placeholder="sk-ant-...")
+
+    # API Key management
+    stored_key = get_api_key()
+    if stored_key:
+        st.success(f"🔑 API Key: `{stored_key[:12]}...`")
+        if st.button("Cambiar API Key"):
+            st.session_state.api_key = ""
+            st.rerun()
     else:
-        st.success("🔑 API Key cargada")
+        key_input = st.text_input("API Key de Anthropic", type="password",
+                                   placeholder="sk-ant-...")
+        if st.button("Guardar key", type="primary"):
+            if key_input.startswith("sk-"):
+                st.session_state.api_key = key_input
+                st.success("✅ API Key guardada")
+                st.rerun()
+            else:
+                st.error("La key debe empezar con sk-ant-...")
 
     st.divider()
     st.markdown("**Supermercados**")
@@ -395,307 +290,175 @@ with st.sidebar:
 <span class="super-badge badge-fresh">Fresh Market</span>""", unsafe_allow_html=True)
 
     st.divider()
-    total, supers_n, cats_n, last_ext = db_stats()
+    total, supers_n, cats_n, last_ext, n_err = db_stats()
     st.markdown("**Base de datos**")
-    st.metric("Productos guardados", total)
+    st.metric("Productos", total)
     c1, c2 = st.columns(2)
     c1.metric("Supers", supers_n)
     c2.metric("Categorías", cats_n)
     if last_ext:
         st.caption(f"Última extracción:\n{last_ext[:16]}")
+    if n_err > 0:
+        st.warning(f"⚠️ {n_err} errores registrados")
     st.divider()
-    if st.button("🗑️ Vaciar base de datos", use_container_width=True):
+    if st.button("🗑️ Vaciar todo", use_container_width=True):
         delete_all()
         st.success("Base de datos vaciada.")
         st.rerun()
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_url, tab_chat, tab_ia, tab_db, tab_err = st.tabs([
-    "🔗 Extraer por URL",
+tab_extract, tab_chat, tab_db, tab_err = st.tabs([
+    "⬇️ Extraer precios",
     "💬 Chat",
-    "🤖 Extracción con IA",
     "🗄️ Base de datos",
     "⚠️ Errores",
 ])
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 1 · EXTRAER POR URL
+# TAB 1 · EXTRAER PRECIOS
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_url:
-    st.subheader("🔗 Extraer productos desde URL")
-    st.caption("La app entra sola a las páginas de los supermercados y extrae todos los productos automáticamente.")
+with tab_extract:
+    st.subheader("⬇️ Extraer precios reales con búsqueda web")
+    st.caption("La IA busca en los sitios oficiales de los supermercados y extrae precios actuales automáticamente.")
 
-    # ── Resumen de cobertura ──────────────────────────────────────────────────
-    all_urls = [(s, c, u) for s, cats in URLS_CATEGORIAS.items() for c, u in cats.items()]
-    total_urls = len(all_urls)
-    n_supers   = len(URLS_CATEGORIAS)
-    n_cats_all = len(set(c for _, c, _ in all_urls))
+    api_key = get_api_key()
 
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Supermercados", n_supers)
-    m2.metric("Categorías", n_cats_all)
-    m3.metric("URLs totales", total_urls)
-    m4.metric("Productos estimados", f"~{total_urls * 8}")
+    if not api_key:
+        st.warning("⚠️ Primero ingresá tu API Key en el panel izquierdo.")
+        st.stop()
 
-    st.info(
-        "🟢 **Automercado, Fresh Market, Maxi Palí** — extracción directa desde la web.  \n"
-        "🟡 **Walmart CR, PriceSmart** — si bloquean el acceso, se usa IA como respaldo automático."
-    )
-
-    # ── BOTÓN PRINCIPAL: EXTRAER TODO ────────────────────────────────────────
+    # ── Extraer todo ─────────────────────────────────────────────────────────
     st.markdown("### 🚀 Extraer todo de una vez")
 
-    sel_supers_all = st.multiselect(
-        "Seleccioná los supermercados",
-        list(URLS_CATEGORIAS.keys()),
-        default=list(URLS_CATEGORIAS.keys()),
-        key="sel_supers_all",
-    )
-    sel_cats_all = st.multiselect(
-        "Seleccioná las categorías",
-        CATEGORIAS,
-        default=CATEGORIAS,
-        key="sel_cats_all",
-    )
+    col_s, col_c = st.columns(2)
+    sel_supers = col_s.multiselect("Supermercados", SUPERMERCADOS,
+                                    default=SUPERMERCADOS, key="sel_s")
+    sel_cats   = col_c.multiselect("Categorías", CATEGORIAS,
+                                    default=CATEGORIAS[:4], key="sel_c")
 
-    urls_sel = [
-        (s, c, u)
-        for s, cats in URLS_CATEGORIAS.items()
-        for c, u in cats.items()
-        if s in sel_supers_all and c in sel_cats_all
-    ]
+    total_comb = len(sel_supers) * len(sel_cats)
+    if total_comb:
+        st.info(f"**{total_comb} combinaciones** · ~{total_comb * 7} productos estimados")
 
-    n_bloqueados = sum(1 for s, _, _ in urls_sel if s in SUPERS_BLOQUEADOS)
-    n_directos   = len(urls_sel) - n_bloqueados
-
-    col_info1, col_info2 = st.columns(2)
-    col_info1.caption(f"🌐 {n_directos} URLs con extracción directa")
-    col_info2.caption(f"🤖 {n_bloqueados} con respaldo de IA")
-
-    if st.button(
-        f"🚀 Extraer todo ({len(urls_sel)} combinaciones)",
-        type="primary",
-
-        key="extract_all_btn",
-    ):
-        if not api_key:
-            st.error("⚠️ Falta la API Key de Anthropic.")
-            save_error("—","—","—","config","API Key no configurada")
-            st.stop()
-        if not urls_sel:
-            st.error("⚠️ Seleccioná supermercados y categorías.")
+    if st.button(f"🚀 Extraer todo ({total_comb} búsquedas)", type="primary", key="btn_all"):
+        if not sel_supers or not sel_cats:
+            st.error("Seleccioná al menos un supermercado y una categoría.")
             st.stop()
 
-        # ── Diagnóstico previo ────────────────────────────────────────────
-        diag = st.expander("🔎 Diagnóstico", expanded=True)
-        with diag:
-            st.write(f"✅ API Key: `{api_key[:12]}...`")
-            st.write(f"📋 URLs a procesar: **{len(urls_sel)}**")
-            st.write(f"🗄️ DB path: `{DB_PATH.resolve()}`")
+        tasks = [(s, c) for s in sel_supers for c in sel_cats]
+        bar      = st.progress(0, text="Iniciando...")
+        col_l, col_r = st.columns([2,1])
+        log_box  = col_l.empty()
+        stat_box = col_r.empty()
+        logs     = []
+        n_ok = n_err_count = n_saved = 0
+
+        for i, (super_, cat) in enumerate(tasks):
+            bar.progress((i+1)/len(tasks), text=f"{i+1}/{len(tasks)} · {super_} · {cat}")
             try:
-                _c = get_conn()
-                _n = _c.execute("SELECT COUNT(*) FROM productos").fetchone()[0]
-                _c.close()
-                st.write(f"✅ DB OK — {_n} productos actuales")
-            except Exception as _e:
-                st.error(f"❌ Error DB: {_e}")
-                save_error("—","—","—","db_test", str(_e))
+                prods = extraer_con_web_search(api_key, super_, cat)
+                n = save_products(prods, super_, cat, fuente="web_search")
+                n_saved += n
+                n_ok    += 1
+                logs.append(f"✅ {super_} · {cat}: {n} productos")
+            except anthropic.AuthenticationError:
+                st.error("❌ API Key inválida. Corregila en el panel izquierdo.")
                 st.stop()
-            try:
-                _tc = anthropic.Anthropic(api_key=api_key)
-                _tr = _tc.messages.create(model="claude-sonnet-4-6", max_tokens=5,
-                    messages=[{"role":"user","content":"di: ok"}])
-                st.write(f"✅ API OK: `{_tr.content[0].text.strip()}`")
-            except Exception as _e:
-                st.error(f"❌ Error API: {_e}")
-                save_error("—","—","—","api_test", str(_e))
-                st.stop()
-
-        client      = anthropic.Anthropic(api_key=api_key)
-        bar         = st.progress(0, text="Iniciando extracción...")
-        col_log, col_stats = st.columns([2, 1])
-        log_box     = col_log.empty()
-        stat_box    = col_stats.empty()
-        logs        = []
-        total_saved = 0
-        total_ok    = 0
-        total_ia    = 0
-        total_err   = 0
-
-        for i, (super_, cat, url) in enumerate(urls_sel):
-            pct  = (i + 1) / len(urls_sel)
-            label = f"{i+1}/{len(urls_sel)} · {super_} · {cat}"
-            bar.progress(pct, text=label)
-
-            # Intentar descarga directa
-            texto, error = fetch_url(url)
-            metodo_usado = "url"
-
-            if error or len(texto) < 300:
-                # Fallback a IA si la página falla o está bloqueada
-                logs.append(f"🤖 {super_} · {cat}: usando IA (web bloqueada)")
-                log_box.markdown("\n".join(logs[-12:]))
-                try:
-                    resp = client.messages.create(
-                        model="claude-sonnet-4-6", max_tokens=900,
-                        system=SYSTEM_IA,
-                        messages=[{"role": "user", "content":
-                            f"Extraé productos de '{cat}' en '{super_}' CR. "
-                            f"Precios realistas en colones, 6-10 productos."}],
-                    )
-                    raw   = resp.content[0].text.strip().replace("```json","").replace("```","")
-                    try:
-                        prods = json.loads(raw).get("productos", [])
-                    except json.JSONDecodeError as je:
-                        save_error(super_, cat, url, "ia_json_parse", str(je), raw[:300])
-                        raise
-                    if not prods:
-                        save_error(super_, cat, url, "ia_sin_productos", "IA devolvió lista vacía", raw[:300])
-                    n     = save_products(prods, super_, cat, metodo="ia_fallback", url=url)
-                    total_saved += n
-                    total_ia    += 1
-                    logs.append(f"   ↳ IA guardó {n} productos")
-                except Exception as e:
-                    save_error(super_, cat, url, "ia_fallback", str(e), "fetch falló, IA también falló")
-                    logs.append(f"   ↳ ❌ Error IA: {e}")
-                    total_err += 1
-            else:
-                # Extracción real desde la web
-                try:
-                    resp = client.messages.create(
-                        model="claude-sonnet-4-6", max_tokens=2000,
-                        system=SYSTEM_SCRAPER,
-                        messages=[{"role": "user", "content":
-                            f"Supermercado: {super_}\nCategoría: {cat}\nURL: {url}\n\nTexto:\n{texto[:50000]}"}],
-                    )
-                    raw   = resp.content[0].text.strip().replace("```json","").replace("```","")
-                    try:
-                        data = json.loads(raw)
-                    except json.JSONDecodeError as je:
-                        save_error(super_, cat, url, "json_parse", str(je), raw[:300])
-                        raise
-                    prods = data.get("productos", [])
-                    if not prods:
-                        err_msg = data.get("error", "sin productos en respuesta")
-                        save_error(super_, cat, url, "sin_productos", err_msg, raw[:300])
-                        raise ValueError(err_msg)
-                    n = save_products(prods, super_, cat, metodo="url", url=url)
-                    total_saved += n
-                    total_ok    += 1
-                    logs.append(f"✅ {super_} · {cat}: {n} productos (web)")
-                except Exception as e:
-                    save_error(super_, cat, url, "scraping_web", str(e))
-                    # Si falla el scraping, intentar IA
-                    logs.append(f"🤖 {super_} · {cat}: web falló, usando IA")
-                    try:
-                        resp = client.messages.create(
-                            model="claude-sonnet-4-6", max_tokens=900,
-                            system=SYSTEM_IA,
-                            messages=[{"role": "user", "content":
-                                f"Extraé productos de '{cat}' en '{super_}' CR. "
-                                f"Precios realistas en colones, 6-10 productos."}],
-                        )
-                        raw   = resp.content[0].text.strip().replace("```json","").replace("```","")
-                        prods = json.loads(raw).get("productos", [])
-                        n     = save_products(prods, super_, cat, metodo="ia_fallback", url=url)
-                        total_saved += n
-                        total_ia    += 1
-                        logs.append(f"   ↳ IA guardó {n} productos")
-                    except Exception as e2:
-                        save_error(super_, cat, url, "ia_fallback_2", str(e2), f"scraping falló: {e}")
-                        logs.append(f"   ↳ ❌ Error: {e2}")
-                        total_err += 1
+            except Exception as e:
+                save_error(super_, cat, "loop", str(e))
+                logs.append(f"❌ {super_} · {cat}: {e}")
+                n_err_count += 1
 
             log_box.markdown("\n".join(logs[-14:]))
             stat_box.markdown(f"""
 **Progreso**
-- ✅ Web directa: {total_ok}
-- 🤖 IA respaldo: {total_ia}
-- ❌ Errores: {total_err}
-- 💾 Guardados: **{total_saved}**
+- ✅ OK: {n_ok}
+- ❌ Errores: {n_err_count}
+- 💾 Guardados: **{n_saved}**
 """)
 
-        bar.progress(1.0, text="✅ ¡Extracción completa!")
-        st.success(f"🎉 Terminado: **{total_saved} productos** guardados de {len(urls_sel)} combinaciones.")
+        bar.progress(1.0, text="✅ Completo")
+        st.success(f"🎉 **{n_saved} productos** guardados. {n_err_count} errores.")
         st.rerun()
 
     st.divider()
 
-    # ── Extracción de URL individual ──────────────────────────────────────────
-    with st.expander("🔍 Extraer una URL específica", expanded=False):
-        col_url, col_cat = st.columns([3, 1])
-        url_input    = col_url.text_input("URL", placeholder="https://www.automercado.co.cr/lacteos", key="url_input")
-        cat_override = col_cat.selectbox("Categoría", ["Auto"] + CATEGORIAS, key="cat_override")
+    # ── Extracción individual ─────────────────────────────────────────────────
+    st.markdown("### 🔍 Buscar un producto específico")
+    st.caption("Buscá precios de cualquier producto en todos los supermercados.")
 
-        if url_input:
-            st.caption(f"Supermercado detectado: **{detectar_supermercado(url_input)}**")
+    col1, col2, col3 = st.columns([2,1,1])
+    producto_buscar = col1.text_input("Producto", placeholder="Ej: leche Dos Pinos, arroz Tío Pelón...")
+    super_buscar    = col2.selectbox("Supermercado", ["Todos"] + SUPERMERCADOS, key="sb_super")
+    cat_buscar      = col3.selectbox("Categoría",    ["Auto"]  + CATEGORIAS,    key="sb_cat")
 
-        if st.button("Extraer", type="primary", disabled=not url_input or not api_key, key="extract_one"):
-            super_ = detectar_supermercado(url_input)
-            cat    = cat_override if cat_override != "Auto" else "General"
+    if st.button("🔍 Buscar precio", type="primary", key="btn_one"):
+        if not producto_buscar:
+            st.error("Escribí un producto para buscar.")
+            st.stop()
 
-            with st.status("Extrayendo...", expanded=True) as status:
-                st.write(f"📡 Descargando `{url_input}`")
-                texto, error = fetch_url(url_input)
+        supers_a_buscar = SUPERMERCADOS if super_buscar == "Todos" else [super_buscar]
+        cat = cat_buscar if cat_buscar != "Auto" else "General"
 
-                if error or len(texto) < 300:
-                    st.warning(f"Web bloqueada o vacía ({error or 'poco contenido'}). Usando IA...")
-                    try:
-                        client = anthropic.Anthropic(api_key=api_key)
-                        resp   = client.messages.create(
-                            model="claude-sonnet-4-6", max_tokens=900, system=SYSTEM_IA,
-                            messages=[{"role":"user","content":
-                                f"Extraé productos de '{cat}' en '{super_}' CR. Precios en colones, 6-10 productos."}],
-                        )
-                        raw   = resp.content[0].text.strip().replace("```json","").replace("```","")
-                        prods = json.loads(raw).get("productos",[])
-                        status.update(label=f"🤖 IA: {len(prods)} productos", state="complete")
-                    except Exception as e:
-                        status.update(label="❌ Error", state="error")
-                        st.error(str(e)); st.stop()
-                else:
-                    st.write(f"✅ {len(texto):,} caracteres descargados. Analizando...")
-                    client = anthropic.Anthropic(api_key=api_key)
-                    try:
-                        resp  = client.messages.create(
-                            model="claude-sonnet-4-6", max_tokens=2000, system=SYSTEM_SCRAPER,
-                            messages=[{"role":"user","content":
-                                f"Supermercado:{super_}\nCategoría:{cat}\nURL:{url_input}\n\nTexto:\n{texto}"}],
-                        )
-                        raw   = resp.content[0].text.strip().replace("```json","").replace("```","")
-                        prods = json.loads(raw).get("productos",[])
-                        status.update(label=f"✅ {len(prods)} productos", state="complete")
-                    except Exception as e:
-                        status.update(label="❌ Error", state="error")
-                        st.error(str(e)); st.stop()
+        todos_prods = []
+        bar2 = st.progress(0)
+        status_txt = st.empty()
 
-            if prods:
-                df_edit = st.data_editor(pd.DataFrame(prods), use_container_width=True, num_rows="dynamic")
-                if st.button("💾 Guardar", type="primary", key="save_one"):
-                    n = save_products(df_edit.to_dict("records"), super_, cat, metodo="url", url=url_input)
-                    st.success(f"✅ {n} productos guardados."); st.rerun()
-            else:
-                st.warning("No se encontraron productos.")
+        for i, s in enumerate(supers_a_buscar):
+            status_txt.caption(f"Buscando en {s}...")
+            bar2.progress((i+1)/len(supers_a_buscar))
+            try:
+                client = anthropic.Anthropic(api_key=api_key)
+                resp = client.messages.create(
+                    model="claude-sonnet-4-6",
+                    max_tokens=1000,
+                    system=SYSTEM_EXTRACTOR,
+                    tools=[{"type": "web_search_20250305", "name": "web_search"}],
+                    messages=[{"role": "user", "content":
+                        f"Buscá el precio actual de '{producto_buscar}' en {s} Costa Rica. "
+                        f"Devolvé el JSON con los resultados."}],
+                )
+                full_text = "".join(b.text for b in resp.content if hasattr(b, "text"))
+                clean = full_text.strip().replace("```json","").replace("```","").strip()
+                start = clean.find("{"); end = clean.rfind("}") + 1
+                if start >= 0 and end > 0:
+                    prods = json.loads(clean[start:end]).get("productos", [])
+                    n = save_products(prods, s, cat, fuente="busqueda_manual")
+                    todos_prods.extend(prods)
+            except Exception as e:
+                save_error(s, cat, "busqueda_individual", str(e))
 
+        status_txt.empty()
+        bar2.empty()
 
+        if todos_prods:
+            st.success(f"✅ {len(todos_prods)} resultados encontrados")
+            df = pd.DataFrame(todos_prods)
+            if "precio" in df.columns:
+                df["precio"] = df["precio"].apply(lambda x: f"₡{float(str(x).replace(',','') or 0):,.0f}")
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.warning("No se encontraron resultados. Probá con otro nombre o categoría.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 · CHAT
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_chat:
-    st.subheader("💬 Consultá precios con IA")
+    st.subheader("💬 Consultá precios con IA + búsqueda web")
+
+    api_key = get_api_key()
 
     quick = {
-        "🌾 Arroz":          "¿Cuánto cuesta el arroz en Walmart CR y Maxi Palí?",
-        "🥛 Leche":          "Comparame precios de leche en todos los supermercados",
-        "🍗 Pollo":          "¿Cuál supermercado tiene el pollo más barato?",
-        "🛒 Mercado básico": "Dame una lista del mercado básico semanal con precios estimados",
-        "🥦 Verduras":       "¿Dónde conviene más comprar frutas y verduras?",
-        "📊 Más barato":     "¿Qué supermercado es generalmente el más barato en CR?",
+        "🌾 Arroz":          "¿Cuánto cuesta el arroz en Walmart CR y Maxi Palí ahora mismo?",
+        "🥛 Leche":          "Buscá precios de leche Dos Pinos en todos los supermercados de CR",
+        "🍗 Pollo":          "¿Cuál supermercado tiene el pollo más barato esta semana?",
+        "🛒 Mercado básico": "Buscá precios actuales del mercado básico semanal en Costa Rica",
+        "🥦 Verduras":       "¿Dónde conviene más comprar frutas y verduras en CR hoy?",
+        "📊 Comparar":       "Comparame precios del aceite de cocina en todos los supermercados de CR",
     }
     cols = st.columns(3)
     for i, (label, prompt) in enumerate(quick.items()):
-        if cols[i % 3].button(label, use_container_width=True, key=f"q_{i}"):
+        if cols[i%3].button(label, use_container_width=True, key=f"q_{i}"):
             st.session_state.quick_prompt = prompt
 
     st.divider()
@@ -709,21 +472,23 @@ with tab_chat:
 
     if not st.session_state.messages:
         with st.chat_message("assistant", avatar="🛒"):
-            st.markdown("¡Hola! Soy tu asistente de precios 🇨🇷 Preguntame lo que quieras sobre productos y supermercados.")
+            st.markdown("""¡Hola! 🇨🇷 Puedo buscar precios **en tiempo real** en los supermercados de Costa Rica.
+
+Preguntame sobre cualquier producto y voy a buscar en la web para darte precios actuales.""")
 
     user_input = st.session_state.pop("quick_prompt", None) or st.chat_input("Preguntá sobre precios...")
 
     if user_input:
         if not api_key:
-            st.error("⚠️ Ingresá tu API Key.")
+            st.error("⚠️ Ingresá tu API Key en el panel izquierdo.")
             st.stop()
 
         context = ""
-        total_db, _, _, _ = db_stats()
+        total_db = db_stats()[0]
         if total_db > 0:
             df_ctx = load_products(search=user_input[:40])
             if not df_ctx.empty:
-                context = f"\n\nDatos reales de la base de datos:\n{df_ctx.head(20).to_string(index=False)}"
+                context = f"\n\nDatos en base de datos local:\n{df_ctx.head(15).to_string(index=False)}"
 
         st.session_state.messages.append({"role": "user", "content": user_input})
         with st.chat_message("user", avatar="🧑"):
@@ -731,119 +496,68 @@ with tab_chat:
 
         client = anthropic.Anthropic(api_key=api_key)
         with st.chat_message("assistant", avatar="🛒"):
-            ph = st.empty(); full = ""
+            ph = st.empty()
+            full = ""
             try:
                 with client.messages.stream(
-                    model="claude-sonnet-4-6", max_tokens=1024,
+                    model="claude-sonnet-4-6",
+                    max_tokens=1024,
                     system=SYSTEM_CHAT + context,
+                    tools=[{"type": "web_search_20250305", "name": "web_search"}],
                     messages=[{"role": m["role"], "content": m["content"]}
                                for m in st.session_state.messages],
                 ) as stream:
                     for chunk in stream.text_stream:
-                        full += chunk; ph.markdown(full + "▌")
+                        full += chunk
+                        ph.markdown(full + "▌")
                 ph.markdown(full)
             except Exception as e:
-                st.error(f"❌ {e}"); st.stop()
+                st.error(f"❌ {e}")
+                save_error("chat","—","stream", str(e))
+                st.stop()
 
         st.session_state.messages.append({"role": "assistant", "content": full})
 
     if st.session_state.get("messages"):
-        if st.button("🗑️ Limpiar chat"):
-            st.session_state.messages = []; st.rerun()
+        if st.button("🗑️ Limpiar chat", key="clear_chat"):
+            st.session_state.messages = []
+            st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 3 · EXTRACCIÓN CON IA
-# ══════════════════════════════════════════════════════════════════════════════
-with tab_ia:
-    st.subheader("🤖 Extracción con IA — precios estimados")
-    st.caption("Para supers que bloquean el acceso directo (Walmart CR, PriceSmart). Los precios son estimados realistas.")
-
-    col_a, col_b = st.columns(2)
-    sel_supers = col_a.multiselect("Supermercados", SUPERMERCADOS, default=["Walmart CR","PriceSmart"])
-    sel_cats   = col_b.multiselect("Categorías",    CATEGORIAS,    default=CATEGORIAS[:3])
-
-    total_tasks = len(sel_supers) * len(sel_cats)
-    if total_tasks:
-        st.info(f"**{total_tasks}** extracciones ({len(sel_supers)} supers × {len(sel_cats)} categorías)")
-
-    if st.button("🚀 Iniciar", type="primary", key="ia_start_btn"):
-        if not api_key:
-            st.error("⚠️ Ingresá tu API Key."); st.stop()
-        if not sel_supers or not sel_cats:
-            st.error("⚠️ Seleccioná supermercados y categorías."); st.stop()
-        client = anthropic.Anthropic(api_key=api_key)
-        bar = st.progress(0); log_box = st.empty()
-        done = errors = saved = 0; logs = []
-
-        for super_ in sel_supers:
-            for cat in sel_cats:
-                try:
-                    resp = client.messages.create(
-                        model="claude-sonnet-4-6", max_tokens=900,
-                        system=SYSTEM_IA,
-                        messages=[{"role": "user", "content":
-                            f"Extraé productos de '{cat}' en '{super_}' CR. "
-                            f"Precios realistas en colones, 6-10 productos."}],
-                    )
-                    raw   = resp.content[0].text.strip().replace("```json","").replace("```","")
-                    try:
-                        prods = json.loads(raw).get("productos", [])
-                    except json.JSONDecodeError as je:
-                        save_error(super_, cat, "", "ia_json_parse", str(je), raw[:300])
-                        raise
-                    if not prods:
-                        save_error(super_, cat, "", "ia_sin_productos", "IA devolvió lista vacía", raw[:300])
-                    n = save_products(prods, super_, cat, metodo="ia")
-                    saved += n; logs.append(f"✅ {super_} · {cat}: {n} productos")
-                except Exception as e:
-                    save_error(super_, cat, "", "ia_extraccion", str(e))
-                    logs.append(f"❌ {super_} · {cat}: {e}"); errors += 1
-                done += 1
-                bar.progress(done/total_tasks)
-                log_box.markdown("\n".join(logs[-10:]))
-
-        st.success(f"✅ **{saved} productos** guardados, {errors} errores.")
-        st.rerun()
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 4 · BASE DE DATOS
+# TAB 3 · BASE DE DATOS
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_db:
     st.subheader("🗄️ Base de datos de productos")
-    total, supers_n, cats_n, last_ext = db_stats()
+    total, supers_n, cats_n, last_ext, _ = db_stats()
 
     if total == 0:
-        st.info("La base de datos está vacía. Usá **🔗 Extraer por URL** para poblarla con datos reales.")
+        st.info("La base de datos está vacía. Usá **⬇️ Extraer precios** para poblarla.")
     else:
-        m1, m2, m3, m4 = st.columns(4)
+        m1,m2,m3,m4 = st.columns(4)
         m1.metric("Total productos", total)
         m2.metric("Supermercados",   supers_n)
         m3.metric("Categorías",      cats_n)
-        m4.metric("Última actualización", last_ext[:10] if last_ext else "—")
+        m4.metric("Actualizado",     last_ext[:10] if last_ext else "—")
 
         st.divider()
-        f1, f2, f3 = st.columns(3)
+        f1,f2,f3 = st.columns(3)
         f_super  = f1.selectbox("Supermercado", ["Todos"] + get_distinct("supermercado"))
         f_cat    = f2.selectbox("Categoría",    ["Todas"] + get_distinct("categoria"))
-        f_search = f3.text_input("Buscar producto", placeholder="Ej: leche, arroz...")
+        f_search = f3.text_input("Buscar", placeholder="Ej: leche, arroz...")
 
         df = load_products(
             supermercado=f_super  if f_super  != "Todos" else None,
             categoria   =f_cat    if f_cat    != "Todas" else None,
             search      =f_search or None,
         )
-        st.caption(f"{len(df)} productos encontrados")
+        st.caption(f"{len(df)} productos")
 
         if not df.empty:
-            cols_show = ["nombre","marca","categoria","supermercado","precio","precio_rebajado","unidad","en_stock","metodo","extraido_en"]
+            cols_show = ["nombre","marca","categoria","supermercado","precio","unidad","en_stock","extraido_en"]
             disp = df[[c for c in cols_show if c in df.columns]].copy()
-            disp["precio"] = disp["precio"].apply(lambda x: f"₡{x:,.0f}")
-            if "precio_rebajado" in disp.columns:
-                disp["precio_rebajado"] = disp["precio_rebajado"].apply(
-                    lambda x: f"₡{x:,.0f}" if pd.notna(x) and x else "—")
-            if "en_stock" in disp.columns:
-                disp["en_stock"] = disp["en_stock"].apply(lambda x: "✅" if x else "❌")
-            st.dataframe(disp, use_container_width=True, height=360)
+            disp["precio"]   = disp["precio"].apply(lambda x: f"₡{x:,.0f}")
+            disp["en_stock"] = disp["en_stock"].apply(lambda x: "✅" if x else "❌")
+            st.dataframe(disp, use_container_width=True, height=380)
 
             st.divider()
             ca, cb = st.columns(2)
@@ -856,85 +570,47 @@ with tab_db:
                 st.markdown("**Promedio por supermercado**")
                 piv2 = df.groupby("supermercado")["precio"].agg(["mean","count"]).round(0).reset_index()
                 piv2.columns = ["Supermercado","Promedio ₡","Prods"]
-                piv2 = piv2.sort_values("Promedio ₡")
-                st.dataframe(piv2, use_container_width=True, hide_index=True)
+                st.dataframe(piv2.sort_values("Promedio ₡"), use_container_width=True, hide_index=True)
 
             st.divider()
-            csv = df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "⬇️ Exportar CSV",
-                data=csv,
+            st.download_button("⬇️ Exportar CSV",
+                data=df.to_csv(index=False).encode("utf-8"),
                 file_name=f"precios_cr_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv",
-            )
+                mime="text/csv")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 5 · ERRORES
+# TAB 4 · ERRORES
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_err:
     st.subheader("⚠️ Registro de errores")
-    st.caption("Todos los errores durante extracción y guardado quedan registrados acá.")
+    with get_conn() as conn:
+        df_err = pd.read_sql_query("SELECT * FROM errores ORDER BY registrado_en DESC", conn)
 
-    n_err = error_count()
-    if n_err == 0:
+    if df_err.empty:
         st.success("✅ No hay errores registrados.")
     else:
-        st.error(f"Se encontraron **{n_err} errores** registrados.")
+        st.error(f"**{len(df_err)} errores** registrados.")
 
-        df_err = load_errors()
-        if not df_err.empty:
-            # Resumen por etapa
-            st.markdown("**Errores por etapa:**")
-            resumen = df_err.groupby("etapa").size().reset_index(name="cantidad")
-            resumen = resumen.sort_values("cantidad", ascending=False)
-            st.dataframe(resumen, use_container_width=True, hide_index=True)
+        resumen = df_err.groupby("etapa").size().reset_index(name="cantidad").sort_values("cantidad", ascending=False)
+        st.dataframe(resumen, use_container_width=True, hide_index=True)
+        st.divider()
 
-            st.divider()
+        fe1, fe2 = st.columns(2)
+        f_s = fe1.selectbox("Supermercado", ["Todos"] + sorted(df_err["supermercado"].dropna().unique().tolist()), key="err_s")
+        f_e = fe2.selectbox("Etapa",        ["Todas"] + sorted(df_err["etapa"].dropna().unique().tolist()),        key="err_e")
 
-            # Filtro por supermercado
-            supers_err = ["Todos"] + sorted(df_err["supermercado"].dropna().unique().tolist())
-            etapas_err = ["Todas"] + sorted(df_err["etapa"].dropna().unique().tolist())
-            fe1, fe2 = st.columns(2)
-            f_super_err = fe1.selectbox("Supermercado", supers_err, key="f_super_err")
-            f_etapa_err = fe2.selectbox("Etapa", etapas_err, key="f_etapa_err")
+        df_show = df_err.copy()
+        if f_s != "Todos": df_show = df_show[df_show["supermercado"] == f_s]
+        if f_e != "Todas": df_show = df_show[df_show["etapa"] == f_e]
 
-            df_show = df_err.copy()
-            if f_super_err != "Todos":
-                df_show = df_show[df_show["supermercado"] == f_super_err]
-            if f_etapa_err != "Todas":
-                df_show = df_show[df_show["etapa"] == f_etapa_err]
+        st.dataframe(df_show[["registrado_en","supermercado","categoria","etapa","mensaje","detalle"]],
+                     use_container_width=True, height=350)
 
-            st.caption(f"{len(df_show)} errores mostrados")
-            st.dataframe(
-                df_show[["registrado_en","supermercado","categoria","etapa","mensaje","detalle","url"]],
-                use_container_width=True,
-                height=380,
-            )
-
-            st.divider()
-            col_dl, col_cl = st.columns([1, 3])
-            csv_err = df_err.to_csv(index=False).encode("utf-8")
-            col_dl.download_button(
-                "⬇️ Exportar errores CSV",
-                data=csv_err,
-                file_name=f"errores_cr_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv",
-            )
-            if col_cl.button("🗑️ Limpiar errores", key="clear_err_btn"):
-                clear_errors()
-                st.success("Errores eliminados.")
-                st.rerun()
-
-            # Diagnóstico rápido
-            st.divider()
-            st.markdown("**🔍 Diagnóstico rápido:**")
-
-            if "precio_cero" in df_err["etapa"].values or "parse_precio" in df_err["etapa"].values:
-                st.warning("🔢 Hay errores de precio — la IA puede estar devolviendo precios en formato incorrecto o como texto.")
-            if "insert_db" in df_err["etapa"].values:
-                st.warning("💾 Hay errores al insertar en la DB — puede ser un problema de permisos o de schema.")
-            if "save_products" in df_err["etapa"].values:
-                st.warning("📭 Algunas extracciones devolvieron listas vacías — la IA no encontró productos o el JSON fue inválido.")
-            n_fallback = len(df_err[df_err["etapa"] == "resumen"])
-            if n_fallback > 0:
-                st.info(f"ℹ️ {n_fallback} categorías tuvieron productos omitidos. Revisá los detalles arriba.")
+        col_dl, col_cl = st.columns([1,3])
+        col_dl.download_button("⬇️ Exportar errores",
+            data=df_err.to_csv(index=False).encode("utf-8"),
+            file_name="errores_cr.csv", mime="text/csv")
+        if col_cl.button("🗑️ Limpiar errores", key="clear_err"):
+            with get_conn() as conn:
+                conn.execute("DELETE FROM errores"); conn.commit()
+            st.rerun()
