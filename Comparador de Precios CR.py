@@ -57,6 +57,28 @@ def init_db():
             )""")
         conn.commit()
 
+        # ── Migraciones: agregar columnas que puedan faltar en DBs viejas ──
+        existing_cols = [r[1] for r in conn.execute("PRAGMA table_info(productos)").fetchall()]
+        migrations = {
+            "actualizado":  "ALTER TABLE productos ADD COLUMN actualizado TEXT NOT NULL DEFAULT ''",
+            "marca":        "ALTER TABLE productos ADD COLUMN marca TEXT DEFAULT ''",
+            "unidad":       "ALTER TABLE productos ADD COLUMN unidad TEXT DEFAULT ''",
+            "notas":        "ALTER TABLE productos ADD COLUMN notas TEXT DEFAULT ''",
+            "precio_rebajado": "ALTER TABLE productos ADD COLUMN precio_rebajado REAL",
+            "metodo":       "ALTER TABLE productos ADD COLUMN metodo TEXT DEFAULT ''",
+            "fuente":       "ALTER TABLE productos ADD COLUMN fuente TEXT DEFAULT ''",
+            "url_fuente":   "ALTER TABLE productos ADD COLUMN url_fuente TEXT DEFAULT ''",
+            "en_stock":     "ALTER TABLE productos ADD COLUMN en_stock INTEGER DEFAULT 1",
+            "extraido_en":  "ALTER TABLE productos ADD COLUMN extraido_en TEXT DEFAULT ''",
+        }
+        for col, sql in migrations.items():
+            if col not in existing_cols:
+                try:
+                    conn.execute(sql)
+                except Exception:
+                    pass
+        conn.commit()
+
 init_db()
 
 def save_error(etapa, mensaje, detalle=""):
@@ -189,9 +211,22 @@ def db_stats():
         total  = conn.execute("SELECT COUNT(*) FROM productos").fetchone()[0]
         supers = conn.execute("SELECT COUNT(DISTINCT supermercado) FROM productos").fetchone()[0]
         cats   = conn.execute("SELECT COUNT(DISTINCT categoria) FROM productos").fetchone()[0]
-        last   = conn.execute("SELECT MAX(actualizado) FROM productos").fetchone()[0]
-        n_err  = conn.execute("SELECT COUNT(*) FROM errores").fetchone()[0]
-        n_imp  = conn.execute("SELECT COUNT(*) FROM importaciones").fetchone()[0]
+        # Detectar qué columna de fecha existe
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(productos)").fetchall()]
+        if "actualizado" in cols:
+            last = conn.execute("SELECT MAX(actualizado) FROM productos").fetchone()[0]
+        elif "extraido_en" in cols:
+            last = conn.execute("SELECT MAX(extraido_en) FROM productos").fetchone()[0]
+        else:
+            last = None
+        try:
+            n_err = conn.execute("SELECT COUNT(*) FROM errores").fetchone()[0]
+        except Exception:
+            n_err = 0
+        try:
+            n_imp = conn.execute("SELECT COUNT(*) FROM importaciones").fetchone()[0]
+        except Exception:
+            n_imp = 0
     return total, supers, cats, last, n_err, n_imp
 
 def get_distinct(col):
