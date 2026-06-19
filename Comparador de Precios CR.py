@@ -478,6 +478,39 @@ with tab_url:
 
         key="extract_all_btn",
     ):
+        if not api_key:
+            st.error("⚠️ Falta la API Key de Anthropic.")
+            save_error("—","—","—","config","API Key no configurada")
+            st.stop()
+        if not urls_sel:
+            st.error("⚠️ Seleccioná supermercados y categorías.")
+            st.stop()
+
+        # ── Diagnóstico previo ────────────────────────────────────────────
+        diag = st.expander("🔎 Diagnóstico", expanded=True)
+        with diag:
+            st.write(f"✅ API Key: `{api_key[:12]}...`")
+            st.write(f"📋 URLs a procesar: **{len(urls_sel)}**")
+            st.write(f"🗄️ DB path: `{DB_PATH.resolve()}`")
+            try:
+                _c = get_conn()
+                _n = _c.execute("SELECT COUNT(*) FROM productos").fetchone()[0]
+                _c.close()
+                st.write(f"✅ DB OK — {_n} productos actuales")
+            except Exception as _e:
+                st.error(f"❌ Error DB: {_e}")
+                save_error("—","—","—","db_test", str(_e))
+                st.stop()
+            try:
+                _tc = anthropic.Anthropic(api_key=api_key)
+                _tr = _tc.messages.create(model="claude-sonnet-4-6", max_tokens=5,
+                    messages=[{"role":"user","content":"di: ok"}])
+                st.write(f"✅ API OK: `{_tr.content[0].text.strip()}`")
+            except Exception as _e:
+                st.error(f"❌ Error API: {_e}")
+                save_error("—","—","—","api_test", str(_e))
+                st.stop()
+
         client      = anthropic.Anthropic(api_key=api_key)
         bar         = st.progress(0, text="Iniciando extracción...")
         col_log, col_stats = st.columns([2, 1])
