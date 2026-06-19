@@ -511,12 +511,19 @@ with tab_url:
                             f"Precios realistas en colones, 6-10 productos."}],
                     )
                     raw   = resp.content[0].text.strip().replace("```json","").replace("```","")
-                    prods = json.loads(raw).get("productos", [])
+                    try:
+                        prods = json.loads(raw).get("productos", [])
+                    except json.JSONDecodeError as je:
+                        save_error(super_, cat, url, "ia_json_parse", str(je), raw[:300])
+                        raise
+                    if not prods:
+                        save_error(super_, cat, url, "ia_sin_productos", "IA devolvió lista vacía", raw[:300])
                     n     = save_products(prods, super_, cat, metodo="ia_fallback", url=url)
                     total_saved += n
                     total_ia    += 1
                     logs.append(f"   ↳ IA guardó {n} productos")
                 except Exception as e:
+                    save_error(super_, cat, url, "ia_fallback", str(e), "fetch falló, IA también falló")
                     logs.append(f"   ↳ ❌ Error IA: {e}")
                     total_err += 1
             else:
@@ -529,15 +536,22 @@ with tab_url:
                             f"Supermercado: {super_}\nCategoría: {cat}\nURL: {url}\n\nTexto:\n{texto[:50000]}"}],
                     )
                     raw   = resp.content[0].text.strip().replace("```json","").replace("```","")
-                    data  = json.loads(raw)
+                    try:
+                        data = json.loads(raw)
+                    except json.JSONDecodeError as je:
+                        save_error(super_, cat, url, "json_parse", str(je), raw[:300])
+                        raise
                     prods = data.get("productos", [])
                     if not prods:
-                        raise ValueError(data.get("error", "sin productos"))
+                        err_msg = data.get("error", "sin productos en respuesta")
+                        save_error(super_, cat, url, "sin_productos", err_msg, raw[:300])
+                        raise ValueError(err_msg)
                     n = save_products(prods, super_, cat, metodo="url", url=url)
                     total_saved += n
                     total_ok    += 1
                     logs.append(f"✅ {super_} · {cat}: {n} productos (web)")
                 except Exception as e:
+                    save_error(super_, cat, url, "scraping_web", str(e))
                     # Si falla el scraping, intentar IA
                     logs.append(f"🤖 {super_} · {cat}: web falló, usando IA")
                     try:
@@ -555,6 +569,7 @@ with tab_url:
                         total_ia    += 1
                         logs.append(f"   ↳ IA guardó {n} productos")
                     except Exception as e2:
+                        save_error(super_, cat, url, "ia_fallback_2", str(e2), f"scraping falló: {e}")
                         logs.append(f"   ↳ ❌ Error: {e2}")
                         total_err += 1
 
@@ -738,10 +753,17 @@ with tab_ia:
                             f"Precios realistas en colones, 6-10 productos."}],
                     )
                     raw   = resp.content[0].text.strip().replace("```json","").replace("```","")
-                    prods = json.loads(raw).get("productos", [])
+                    try:
+                        prods = json.loads(raw).get("productos", [])
+                    except json.JSONDecodeError as je:
+                        save_error(super_, cat, "", "ia_json_parse", str(je), raw[:300])
+                        raise
+                    if not prods:
+                        save_error(super_, cat, "", "ia_sin_productos", "IA devolvió lista vacía", raw[:300])
                     n = save_products(prods, super_, cat, metodo="ia")
                     saved += n; logs.append(f"✅ {super_} · {cat}: {n} productos")
                 except Exception as e:
+                    save_error(super_, cat, "", "ia_extraccion", str(e))
                     logs.append(f"❌ {super_} · {cat}: {e}"); errors += 1
                 done += 1
                 bar.progress(done/total_tasks)
